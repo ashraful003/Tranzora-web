@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { ToastProvider } from "@/components/ui";
 import "./globals.css";
 import "./specific.css";
 import "./overrides.css";
+import "./records.css";
 
 export const metadata: Metadata = {
   title: "Tranzora | Transport Management",
@@ -11,7 +13,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

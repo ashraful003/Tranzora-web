@@ -1,236 +1,118 @@
 "use client";
 
-import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
-import { navigation, Screen, screens } from "@/lib/screens";
+import { useSearchParams } from "next/navigation";
+import { ENTITIES, type CollectionKey } from "@/lib/db/schema";
+import { modules, type Screen } from "@/lib/screens";
+import { getView, type View } from "@/lib/views";
+import AuthScreen from "./AuthScreen";
+import { BackupContent, DatabaseContent, PermissionsContent, ReportsCenter, RolesContent, SubscriptionContent } from "./content/Admin";
+import Dashboard from "./content/Dashboard";
+import Documents from "./content/Documents";
+import { BillGeneration, BookingConfirmation, Cashbook, InvoiceView, Receivables } from "./content/Finance";
+import { CalendarContent, MapContent, NotificationsContent } from "./content/Operations";
+import SettingsContent, { ProfileContent } from "./content/Settings";
+import RecordDetail from "./records/RecordDetail";
+import RecordForm from "./records/RecordForm";
+import RecordPicker, { usePickedId } from "./records/RecordPicker";
+import RecordTable, { newHref } from "./records/RecordTable";
+import Shell from "./Shell";
+import { EmptyState } from "./ui";
 
-type IconName = "grid" | "trip" | "booking" | "vehicle" | "driver" | "customer" | "wrench" | "fuel" | "expense" | "income" | "report" | "users" | "settings" | "search" | "bell" | "plus" | "dots" | "arrow" | "menu" | "close" | "check";
-
-const iconPaths: Record<IconName, React.ReactNode> = {
-  grid: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
-  trip: <><path d="M4 17h16M6 17l1-8h10l1 8M8 9l2-3h4l2 3"/><circle cx="8" cy="18" r="2"/><circle cx="16" cy="18" r="2"/></>,
-  booking: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></>,
-  vehicle: <><path d="M5 17h14l-1.5-7h-11zM3 14h2m14 0h2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></>,
-  driver: <><circle cx="12" cy="8" r="4"/><path d="M4 21c1-5 4-7 8-7s7 2 8 7"/></>,
-  customer: <><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c1-4 3-6 6-6s5 2 6 6M15 15c3 0 5 2 6 5"/></>,
-  wrench: <path d="M14 6a4 4 0 0 0-5 5L3 17l4 4 6-6a4 4 0 0 0 5-5l-3 2-3-3z"/>,
-  fuel: <><path d="M5 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16M3 21h15M8 7h5v4H8z"/><path d="M16 8h2l3 3v7a2 2 0 0 1-4 0v-3"/></>,
-  expense: <><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8l-4 4 4 4"/></>,
-  income: <><circle cx="12" cy="12" r="9"/><path d="M16 12H8m4-4 4 4-4 4"/></>,
-  report: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></>,
-  users: <><circle cx="8" cy="8" r="3"/><circle cx="17" cy="8" r="3"/><path d="M2 20c1-4 3-6 6-6s5 2 6 6M12 20c1-4 3-6 5-6 3 0 5 2 6 6"/></>,
-  settings: <><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L14.5 3h-5L9 6a8 8 0 0 0-1.7 1L5 6 3 9.5 5.1 11a7 7 0 0 0 0 2L3 14.5 5 18l2.3-1a8 8 0 0 0 1.7 1l.5 3h5l.5-3a8 8 0 0 0 1.7-1l2.3 1 2-3.5-2.1-1.5a7 7 0 0 0 .1-1z"/></>,
-  search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
-  bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></>,
-  plus: <path d="M12 5v14M5 12h14"/>,
-  dots: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
-  arrow: <path d="m9 18 6-6-6-6"/>,
-  menu: <path d="M4 6h16M4 12h16M4 18h16"/>,
-  close: <path d="m6 6 12 12M18 6 6 18"/>,
-  check: <path d="m5 12 4 4L19 6"/>,
-};
-
-function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
-  return <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{iconPaths[name]}</svg>;
-}
-
-const iconFor = (label: string): IconName => {
-  const key = label.toLowerCase();
-  if (key.includes("dashboard")) return "grid";
-  if (key.includes("trip")) return "trip";
-  if (key.includes("booking")) return "booking";
-  if (key.includes("vehicle")) return "vehicle";
-  if (key.includes("driver")) return "driver";
-  if (key.includes("customer")) return "customer";
-  if (key.includes("maintenance")) return "wrench";
-  if (key.includes("fuel")) return "fuel";
-  if (key.includes("expense")) return "expense";
-  if (key.includes("income")) return "income";
-  if (key.includes("report")) return "report";
-  if (key.includes("user")) return "users";
-  return "settings";
-};
-
-const stats = [
-  { label: "Total Revenue", value: "৳ 12,48,520", delta: "+12.5%", tone: "blue" },
-  { label: "Active Trips", value: "248", delta: "+8.2%", tone: "green" },
-  { label: "Total Vehicles", value: "184", delta: "+4.1%", tone: "violet" },
-  { label: "Pending Tasks", value: "36", delta: "-2.4%", tone: "orange" },
-];
-
-const people = ["Arif Hossain", "Nusrat Jahan", "Rafiq Ahmed", "Tanvir Hasan", "Sabina Akter", "Mehedi Rahman", "Farhana Yasmin", "Sakib Islam"];
-const places = ["Dhaka → Chattogram", "Sylhet → Dhaka", "Khulna → Rajshahi", "Dhaka → Cox's Bazar", "Barishal → Dhaka", "Rangpur → Bogura", "Cumilla → Dhaka", "Gazipur → Mymensingh"];
-const statuses = ["Completed", "In Progress", "Pending", "Completed", "Active", "Scheduled", "Pending", "Completed"];
-
-function Status({ children }: { children: string }) {
-  const key = children.toLowerCase().replace(" ", "-");
-  return <span className={`status status-${key}`}>{children}</span>;
-}
-
-function Sparkline({ color = "#2563eb", fill = true }: { color?: string; fill?: boolean }) {
+function SingleRecord({ entity, mode }: { entity: CollectionKey; mode: "detail" | "edit" }) {
+  const id = usePickedId(entity);
+  if (!id) return <EmptyState title={`No ${ENTITIES[entity].label.toLowerCase()} yet`} text="Create one first." />;
   return (
-    <svg className="sparkline" viewBox="0 0 520 170" preserveAspectRatio="none" role="img" aria-label="Performance trend chart">
-      <defs><linearGradient id={`fade-${color.slice(1)}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={color} stopOpacity=".22"/><stop offset="1" stopColor={color} stopOpacity="0"/></linearGradient></defs>
-      {[35, 75, 115, 155].map((y) => <line key={y} x1="0" y1={y} x2="520" y2={y} stroke="#edf1f7" strokeWidth="1" />)}
-      {fill && <path d="M0 139 C35 123 58 137 91 112 S150 91 181 105 S238 71 270 83 S330 53 367 72 S425 43 457 49 S495 24 520 18 L520 170 L0 170Z" fill={`url(#fade-${color.slice(1)})`} />}
-      <path d="M0 139 C35 123 58 137 91 112 S150 91 181 105 S238 71 270 83 S330 53 367 72 S425 43 457 49 S495 24 520 18" fill="none" stroke={color} strokeWidth="3" />
-      {[91,181,270,367,457,520].map((x, i) => <circle key={x} cx={x} cy={[112,105,83,72,49,18][i]} r="3.5" fill="white" stroke={color} strokeWidth="2" />)}
-    </svg>
+    <>
+      <div className="rx-picker-bar">
+        <RecordPicker entity={entity} value={id} label={mode === "edit" ? `${ENTITIES[entity].singular} to edit` : `Showing ${ENTITIES[entity].singular.toLowerCase()}`} />
+      </div>
+      {mode === "edit" ? <RecordForm key={id} entity={entity} id={id} onDone={() => undefined} /> : <RecordDetail key={id} entity={entity} id={id} compact />}
+    </>
   );
 }
 
-function Donut({ value = 72 }: { value?: number }) {
-  return <div className="donut" style={{ background: `conic-gradient(#2563eb 0 ${value}%, #18b981 ${value}% 86%, #f59f0b 86% 94%, #ef5b6c 94%)` }}><div><strong>{value}%</strong><span>Completed</span></div></div>;
+function NewRecord({ entity }: { entity: CollectionKey }) {
+  const sp = useSearchParams();
+  const initial = Object.fromEntries([...sp.entries()]);
+  return <RecordForm entity={entity} initial={initial} />;
 }
 
-function BarChart() {
-  const bars = [44, 67, 53, 82, 61, 91, 72, 99, 77, 88, 66, 94];
-  return <div className="bar-chart" aria-label="Monthly performance bar chart">{bars.map((bar, i) => <div className="bar-pair" key={i}><i style={{ height: `${bar}%` }} /><b style={{ height: `${Math.max(18, bar - 23)}%` }} /><span>{["J","F","M","A","M","J","J","A","S","O","N","D"][i]}</span></div>)}</div>;
+function Content({ screen, view }: { screen: Screen; view?: View }) {
+  if (view) {
+    switch (view.type) {
+      case "table":
+        return <RecordTable view={view} title={screen.title} />;
+      case "form":
+        return view.mode === "new" ? <NewRecord entity={view.entity} /> : <SingleRecord entity={view.entity} mode="edit" />;
+      case "detail":
+        return <SingleRecord entity={view.entity} mode="detail" />;
+      case "documents":
+        return <Documents ownerType={view.ownerType} title={screen.title} />;
+      case "invoice":
+        return <InvoiceView mode={view.mode} />;
+      case "booking-confirmation":
+        return <BookingConfirmation />;
+      case "bill-generation":
+        return <BillGeneration />;
+      case "cashbook":
+        return <Cashbook />;
+      case "receivables":
+        return <Receivables />;
+      case "map":
+        return <MapContent mode={view.mode} />;
+      case "notifications":
+        return <NotificationsContent category={view.category} />;
+      case "settings":
+        return <SettingsContent section={view.section} />;
+      case "subscription":
+        return <SubscriptionContent mode={view.mode} />;
+    }
+  }
+  switch (screen.kind) {
+    case "overview":
+      return <Dashboard slug={screen.slug} kind="overview" />;
+    case "analytics":
+      return <Dashboard slug={screen.slug} kind="analytics" />;
+    case "calendar":
+      return <CalendarContent />;
+    case "profile":
+      return <ProfileContent />;
+    case "reports-center":
+      return <ReportsCenter slug={screen.slug} />;
+    case "backup":
+      return <BackupContent />;
+    case "database":
+      return <DatabaseContent />;
+    case "permissions":
+      return screen.code === "17.4" ? <RolesContent /> : <PermissionsContent />;
+    default:
+      return <EmptyState title="This screen has no content yet" />;
+  }
 }
 
-function StatCards({ compact = false, title = "" }: { compact?: boolean; title?: string }) {
-  const key=title.toLowerCase();
-  const labels = key.includes("driver") ? [["Total Drivers","156"],["Active Drivers","132"],["On Trip","18"],["Inactive Drivers","6"]] : key.includes("vehicle") ? [["Total Vehicles","56"],["Active Vehicles","42"],["In Maintenance","8"],["Inactive","6"]] : key.includes("booking") ? [["Total Bookings","568"],["Confirmed","412"],["Pending","98"],["Cancelled","58"]] : key.includes("maintenance") ? [["Total Maintenance","45"],["Scheduled","28"],["In Progress","9"],["Overdue","3"]] : key.includes("expense") ? [["Total Expenses","৳ 285,800"],["Fuel Expenses","৳ 78,200"],["Maintenance","৳ 59,100"],["Other Expenses","৳ 128,500"]] : key.includes("income") || key.includes("revenue") ? [["Total Income","৳ 485,600"],["Trip Income","৳ 345,200"],["Other Income","৳ 78,900"],["Daily Average","৳ 15,665"]] : key.includes("trip") ? [["Total Trips","912"],["Completed Trips","742"],["Ongoing Trips","128"],["Cancelled Trips","42"]] : key.includes("customer") || key.includes("patient") ? [[key.includes("patient")?"Total Patients":"Total Customers","1,248"],["Active","1,102"],["New This Month","68"],["Inactive","78"]] : stats.map(s=>[s.label,s.value]);
-  const tailored=labels.map((item,i)=>({...stats[i],label:item[0],value:item[1]}));
-  return <div className={`stats-grid ${compact ? "compact" : ""}`}>{tailored.map((stat, i) => <article className="stat-card" key={stat.label}><div className={`stat-icon ${stat.tone}`}><Icon name={(["income", "trip", "vehicle", "booking"] as IconName[])[i]} /></div><div className="stat-copy"><span>{stat.label}</span><strong>{stat.value}</strong><small className={stat.delta.startsWith("+") ? "positive" : "negative"}>{stat.delta} <em>vs last month</em></small></div></article>)}</div>;
+/** Primary "Add" button for a screen: the entity it lists, or the module's create form. */
+function addAction(screen: Screen, view?: View): { href: string; label: string } | undefined {
+  if (view?.type === "table") {
+    if (["auditLogs", "reports", "subscriptionPayments"].includes(view.entity)) return undefined;
+    return { href: newHref(view.entity, view.defaults), label: `Add ${ENTITIES[view.entity].singular.toLowerCase()}` };
+  }
+  if (view?.type === "detail") return { href: newHref(view.entity), label: `New ${ENTITIES[view.entity].singular.toLowerCase()}` };
+  if (view?.type === "documents") return undefined;
+  if (view && ["form", "settings", "subscription", "invoice", "bill-generation", "notifications"].includes(view.type)) return undefined;
+  if (["profile", "backup", "database", "permissions", "reports-center"].includes(screen.kind)) return undefined;
+  const mod = modules.find((m) => m.id === screen.moduleId);
+  const form = mod?.subModules.find((s) => s.kind === "form");
+  return form ? { href: `/screens/${form.slug}`, label: form.title } : screen.moduleId === 2 ? { href: newHref("trips"), label: "New trip" } : undefined;
 }
 
-function DataTable({ title, query, onDelete }: { title: string; query: string; onDelete: (name: string) => void }) {
-  const lower = title.toLowerCase();
-  const entity = lower.includes("log") || lower.includes("alert") || lower.includes("activity") ? "log" : lower.includes("document") ? "document" : lower.includes("maintenance") ? "maintenance" : lower.includes("fuel") ? "fuel" : lower.includes("booking") ? "booking" : lower.includes("report") ? "report" : lower.includes("vehicle") ? "vehicle" : lower.includes("driver") ? "driver" : lower.includes("customer") || lower.includes("patient") || lower.includes("user") || lower.includes("supplier") ? "person" : lower.includes("categor") ? "category" : lower.includes("expense") || lower.includes("income") || lower.includes("invoice") || lower.includes("payment") || lower.includes("payroll") ? "finance" : "trip";
-  const columns = entity === "vehicle" ? ["Vehicle ID", "Vehicle number", "Type", "Capacity", "Driver", "Status"] : entity === "person" || entity === "driver" ? [entity === "driver" ? "Driver" : lower.includes("patient") ? "Patient" : lower.includes("supplier") ? "Supplier" : "Name", "Phone", "Email", lower.includes("supplier") ? "City" : "Trips", "Status", "Joined"] : entity === "finance" ? ["Reference", "Category", "Description", "Date", "Amount", "Status"] : entity === "booking" ? ["Booking ID","Customer","Route","Vehicle","Booking date","Status"] : entity === "maintenance" ? ["Maintenance ID","Vehicle","Type","Scheduled date","Priority","Status"] : entity === "fuel" ? ["Fuel ID","Vehicle","Driver","Liters","Cost / L","Total amount"] : entity === "document" ? ["Document name","Category","Related to","Uploaded by","Upload date","Size"] : entity === "log" ? ["Date & time","Level","Module","Message","User","IP address"] : entity === "report" ? ["Report name","Type","Generated on","Date range","Generated by","Status"] : entity === "category" ? ["Category name","Description","Total expenses","Status","Updated","Owner"] : ["Trip ID", "Route", "Driver", "Vehicle", "Date", "Status"];
-  const rows = Array.from({ length: 8 }, (_, i) => {
-    if (entity === "vehicle") return [`VHC-2024-${String(32-i).padStart(4,"0")}`, `DHA-${11 + i}-${4321 + i * 127}`, ["Coach", "Mini Bus", "Truck", "Sedan"][i % 4], ["45 seats","20 seats","10 ton","4 seats"][i%4], people[i], statuses[i]];
-    if (entity === "person" || entity === "driver") return [people[i], `+880 17${32 + i} 45${1120 + i}`, `${people[i].toLowerCase().replace(" ", ".")}@mail.com`, `${32 + i * 7}`, statuses[i], `Aug ${2 + i}, 2026`];
-    if (entity === "finance") return [`TXN-${22031 + i}`, ["Fuel", "Maintenance", "Fare", "Salary"][i % 4], ["Diesel refill","Brake pad replacement","Trip fare received","Driver salary"][i%4], `${20-i} May 2024`, `৳ ${(12450 + i * 3820).toLocaleString()}`, statuses[i]];
-    if (entity === "booking") return [`BK-2024-${String(64-i).padStart(4,"0")}`,people[i],places[i],`Truck-${String(i+1).padStart(2,"0")}`,`${20-i} May 2024`,statuses[i]];
-    if (entity === "maintenance") return [`MAIN-2024-${String(24-i).padStart(4,"0")}`,`VHC-2024-${String(32-i).padStart(4,"0")}`,["Engine check","Oil change","Brake system","Tire rotation"][i%4],`${25-i} May 2024`,["High","Medium","Low","High"][i%4],statuses[i]];
-    if (entity === "fuel") return [`FUEL-2024-${String(125-i).padStart(4,"0")}`,`VHC-2024-${String(32-i).padStart(4,"0")}`,people[i],`${90+i*5} L`,`৳ ${(29.8+i*.1).toFixed(2)}`,`৳ ${(2680+i*245).toLocaleString()}`];
-    if (entity === "document") return [["Registration.pdf","Insurance Certificate.pdf","Driver License.pdf","Fitness Certificate.pdf"][i%4],["Vehicle Documents","Insurance","Driver Documents","Permits & Licenses"][i%4],`VHC-2024-${32-i}`,"Admin User",`${20-i} May 2024`,`${780+i*95} KB`];
-    if (entity === "log") return [`29 May 2024, ${10-i}:20 AM`,["Info","Warning","Error","Critical"][i%4],["Authentication","Booking","Vehicle","Payment"][i%4],["User logged in successfully","New booking received","Engine warning detected","Payment received"][i%4],people[i],`192.168.1.${10+i}`];
-    if (entity === "report") return [["Trip Report","Income Statement","Vehicle Performance","Expense Summary"][i%4],["Operational","Financial","Performance","Financial"][i%4],`${29-i} May 2024`,`01 May – 31 May 2024`,`Admin User`,statuses[i]];
-    if (entity === "category") return [["Fuel","Maintenance","Driver Salary","Toll & Tax","Insurance","Office Expense","Parking","Others"][i],"Operational business expense",`৳ ${(165000-i*12750).toLocaleString()}`,statuses[i],`${20-i} May 2024`,`Admin User`];
-    return [`TR-${1038 + i}`, places[i], people[i], `DHA-${11 + i}-${4321 + i * 127}`, `Aug ${20 - i}, 2026`, statuses[i]];
-  }).filter((row) => row.join(" ").toLowerCase().includes(query.toLowerCase()));
-    return <div className="table-card"><div className="table-tabs"><button className="active">All</button><button>Active</button><button>Pending</button><button>Completed</button><span>{rows.length} records</span></div><div className="table-scroll"><table><thead><tr>{columns.map((col) => <th key={col}>{col}<span className="sort">↕</span></th>)}<th>Action</th></tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j}>{j === 0 && (entity === "person" || entity === "driver") ? <span className="person-cell"><span className={`mini-avatar avatar-${i % 4}`}>{cell.split(" ").map((p) => p[0]).join("")}</span><b>{cell}</b></span> : statuses.includes(cell) || ["High","Medium","Low","Warning","Error","Critical","Info"].includes(cell) ? <Status>{cell}</Status> : <span className={j === 0 ? "primary-cell" : ""}>{cell}</span>}</td>)}<td><div className="actions"><button title="View">◉</button><button title="Edit">✎</button><button className="delete" title="Delete" onClick={() => onDelete(row[0])}>⌫</button><button title="More"><Icon name="dots" size={15}/></button></div></td></tr>)}</tbody></table></div><div className="pagination"><span>Showing 1 to {rows.length} of 48 results</span><div><button>‹</button><button className="active">1</button><button>2</button><button>3</button><button>…</button><button>8</button><button>›</button></div></div></div>;
-}
-
-function AnalyticsContent({ title }: { title: string }) {
-  const expense=title.includes("Expense"), income=title.includes("Income")||title.includes("Revenue")||title.includes("Financial"), maintenance=title.includes("Maintenance"), customer=title.includes("Customer"), fuel=title.includes("Fuel");
-  const trendTitle=expense?"Expense Trend":income?"Revenue Trend":maintenance?"Maintenance Trend":customer?"Customer Growth":fuel?"Fuel Cost Trend":"Performance Overview";
-  const donutTitle=expense?"Expense by Category":income?"Income by Source":maintenance?"Maintenance by Type":customer?"Customers by City":fuel?"Fuel by Vehicle":"Distribution";
-  return <><StatCards compact title={title}/><div className="chart-grid"><article className="panel chart-large"><div className="panel-title"><div><h3>{trendTitle}</h3><p>01 May – 31 May 2024</p></div><select aria-label="Chart period"><option>Daily</option><option>Monthly</option></select></div><Sparkline color={expense ? "#ef5b6c" : maintenance ? "#16a879" : "#2563eb"}/><div className="axis-labels"><span>May 1</span><span>May 6</span><span>May 11</span><span>May 16</span><span>May 21</span><span>May 31</span></div></article><article className="panel donut-panel"><div className="panel-title"><div><h3>{donutTitle}</h3><p>May 2024 breakdown</p></div><button className="icon-btn"><Icon name="dots"/></button></div><Donut/><ul className="legend"><li><i className="dot blue"/>{expense?"Fuel":income?"Trip income":"Completed"} <b>45.2%</b></li><li><i className="dot green"/>{expense?"Maintenance":income?"Other income":"Active"} <b>24.4%</b></li><li><i className="dot yellow"/>{expense?"Driver salary":"Pending"} <b>18.2%</b></li><li><i className="dot red"/>Others <b>12.2%</b></li></ul></article></div><div className="bottom-grid"><article className="panel"><div className="panel-title"><div><h3>Monthly Comparison</h3><p>Operational performance</p></div><span className="positive">+14.8%</span></div><BarChart/></article><article className="panel"><div className="panel-title"><div><h3>{maintenance?"Top Costly Maintenance":customer?"Top Customers":"Top Performing Routes"}</h3><p>Based on current period</p></div><a href="#">View all</a></div><div className="rank-list">{places.slice(0, 5).map((place, i) => <div key={place}><span>{i + 1}</span><p><b>{place}</b><small>{42 - i * 4} completed trips</small></p><strong>৳ {(184 - i * 17)}k</strong></div>)}</div></article></div></>;
-}
-
-function MapContent({ title }: { title: string }) {
-  return <><StatCards compact/><div className="map-layout"><article className="panel map-card"><div className="map-toolbar"><button className="active">Live map</button><button>Routes</button><button>Zones</button><div className="map-search"><Icon name="search" size={15}/><input placeholder="Search vehicle or location"/></div></div><div className="map-canvas"><svg viewBox="0 0 800 430" preserveAspectRatio="none"><path className="road thin" d="M-20 80 C170 20 260 150 400 100 S610 5 830 100M20 360 C190 280 320 390 430 310S650 190 820 260M170 -20 C190 120 110 210 150 450M600 -20 C560 120 680 230 610 460"/><path className="road" d="M-20 250 C120 215 190 275 295 230 S455 120 560 180 660 310 830 260"/><path className="route-line" d="M78 286 C174 234 227 280 305 230 S431 150 536 184 638 266 726 236"/><circle className="map-pin start" cx="78" cy="286" r="10"/><circle className="map-pin mid" cx="305" cy="230" r="9"/><circle className="map-pin end" cx="726" cy="236" r="11"/><g className="car-marker" transform="translate(535 175)"><circle r="18"/><text textAnchor="middle" y="5">▰</text></g></svg><div className="zoom"><button>+</button><button>−</button></div><div className="map-badge"><span className="pulse"/> 24 vehicles online</div></div></article><aside className="panel tracking-list"><div className="panel-title"><div><h3>{title.includes("Route") ? "Recommended Routes" : "Active Vehicles"}</h3><p>Live status updates</p></div></div>{people.slice(0, 6).map((person, i) => <button key={person} className={i === 0 ? "selected" : ""}><span className="vehicle-chip"><Icon name="vehicle" size={17}/></span><span><b>DHA-{11 + i}-{4321 + i}</b><small>{person} · {i + 3} min ago</small></span><Status>{i === 3 ? "Pending" : "Active"}</Status></button>)}</aside></div><div className="panel route-table"><DataTable title="Trips" query="" onDelete={() => undefined}/></div></>;
-}
-
-function OverviewContent() {
-  return <><StatCards/><div className="chart-grid"><article className="panel chart-large"><div className="panel-title"><div><h3>Revenue Overview</h3><p>Income performance this year</p></div><div className="chart-legend"><span><i className="dot blue"/>Revenue</span><select><option>This year</option></select></div></div><Sparkline/><div className="axis-labels"><span>Jan</span><span>Mar</span><span>May</span><span>Jul</span><span>Sep</span><span>Nov</span></div></article><article className="panel donut-panel"><div className="panel-title"><div><h3>Fleet Status</h3><p>184 total vehicles</p></div></div><Donut value={68}/><ul className="legend"><li><i className="dot blue"/>On trip <b>68%</b></li><li><i className="dot green"/>Available <b>18%</b></li><li><i className="dot yellow"/>Maintenance <b>9%</b></li><li><i className="dot red"/>Inactive <b>5%</b></li></ul></article></div><div className="bottom-grid"><article className="panel"><div className="panel-title"><div><h3>Recent Trips</h3><p>Latest fleet activity</p></div><a href="#">View all</a></div><div className="simple-list">{places.slice(0, 5).map((place, i) => <div key={place}><span className={`mini-avatar avatar-${i % 4}`}><Icon name="trip" size={15}/></span><p><b>{place}</b><small>{people[i]} · DHA-{11 + i}-{4321 + i}</small></p><Status>{statuses[i]}</Status></div>)}</div></article><article className="panel"><div className="panel-title"><div><h3>Upcoming Maintenance</h3><p>Due in the next 7 days</p></div><a href="#">View all</a></div><div className="simple-list">{people.slice(0, 5).map((person, i) => <div key={person}><span className="date-tile"><b>{21 + i}</b><small>AUG</small></span><p><b>DHA-{14 + i}-{6782 + i}</b><small>{["Oil & filter change", "Brake inspection", "Engine service", "Tire replacement", "Safety inspection"][i]}</small></p><span className="cost">৳{3 + i * 2},500</span></div>)}</div></article></div></>;
-}
-
-function SpecialSettingsContent({ title }: { title: string }) {
-  if (title === "Change Password") return <div className="settings-layout"><aside className="settings-nav"><button>Profile information</button><button className="active">Change password</button><button>Notification settings</button><button>Appearance</button></aside><section className="panel settings-form narrow-settings"><div className="settings-heading"><h3>Change Password</h3><p>Update your account password.</p></div><form><label>Current password<input type="password" placeholder="Enter current password"/></label><label>New password<input type="password" placeholder="Enter new password"/></label><label>Confirm new password<input type="password" placeholder="Confirm new password"/></label><div className="password-rules"><b>Password requirements:</b><span>• At least 8 characters long</span><span>• Include uppercase and lowercase letters</span><span>• Include at least one number</span><span>• Include at least one special character</span></div><div className="form-actions"><button className="primary">Update password</button><button type="button" className="secondary">Cancel</button></div></form></section></div>;
-  if (title === "Appearance Settings") return <div className="settings-layout"><aside className="settings-nav"><button>Profile information</button><button>Change password</button><button>Notification settings</button><button className="active">Appearance</button></aside><section className="appearance-grid"><article className="panel"><h3>Theme settings</h3><p>Choose your preferred theme</p><div className="theme-cards"><button className="active"><i className="theme-preview light"/>Light</button><button><i className="theme-preview dark"/>Dark</button><button><i className="theme-preview system"/>System</button></div><h4>Primary color</h4><div className="color-options">{["#1769e8","#7759e9","#16a879","#f39a24","#e85162","#16a6a0","#9aa4b3"].map(c=><button aria-label={`Choose ${c}`} style={{background:c}} key={c}/>)}</div></article><article className="panel"><h3>Layout settings</h3><p>Choose your preferred layout</p><div className="theme-cards"><button className="active"><i className="layout-preview"/>Default</button><button><i className="layout-preview compact"/>Compact</button><button><i className="layout-preview wide"/>Wide</button></div><h4>Sidebar position</h4><div className="segmented"><button className="active">Left</button><button>Right</button></div></article><article className="panel appearance-wide"><h3>Other settings</h3>{["Enable animations","Compact mode","Show breadcrumbs","Show tips"].map((x,i)=><label className="toggle-row" key={x}><span><b>{x}</b><small>Customize how the application behaves.</small></span><input type="checkbox" defaultChecked={i!==1}/><i/></label>)}</article></section></div>;
-  if (title === "Notification Settings") return <div className="settings-layout"><aside className="settings-nav"><button>Profile information</button><button>Change password</button><button className="active">Notification settings</button><button>Appearance</button></aside><section className="panel notification-matrix"><div className="settings-heading"><h3>Notification Settings</h3><p>Configure and manage system notifications.</p></div><div className="matrix-head"><b>Notification type</b><b>Email</b><b>SMS</b><b>In-app</b><b>Status</b></div>{["Trip assigned","Trip started","Trip completed","Payment received","Maintenance alert","System updates","Promotions"].map((x,i)=><div className="matrix-row" key={x}><span><b>{x}</b><small>When {x.toLowerCase()} occurs</small></span>{[0,1,2].map(n=><label className="mini-toggle" key={n}><input type="checkbox" defaultChecked={(i+n)%3!==1}/><i/></label>)}<Status>{i===6?"Inactive":"Active"}</Status></div>)}<div className="form-actions"><button className="primary">Save changes</button></div></section></div>;
-  if (title === "Security Settings") return <div className="settings-layout"><aside className="settings-nav"><button>General settings</button><button>Roles & permissions</button><button>System preferences</button><button>Backup & restore</button><button className="active">Security settings</button><button>Audit logs</button></aside><section className="security-grid"><article className="panel"><h3>Password policy</h3>{["Require uppercase letters","Require lowercase letters","Require numbers","Require special characters"].map(x=><label className="toggle-row" key={x}><span><b>{x}</b></span><input type="checkbox" defaultChecked/><i/></label>)}</article><article className="panel"><h3>Two-factor authentication</h3><p>Add an extra layer of security to your account.</p><dl className="detail-list single"><div><dt>2FA status</dt><dd className="positive">Enabled</dd></div><div><dt>2FA method</dt><dd>Authenticator app</dd></div></dl><button className="secondary full">Manage 2FA</button></article><article className="panel"><h3>Session management</h3><div className="form-grid one-col"><label>Session timeout<select><option>30 minutes</option></select></label><label>Maximum active sessions<select><option>3</option></select></label></div></article><article className="panel"><h3>Login security</h3>{["Limit login attempts","Login activity notification"].map(x=><label className="toggle-row" key={x}><span><b>{x}</b></span><input type="checkbox" defaultChecked/><i/></label>)}</article></section></div>;
-  if (title === "Payment Settings") return <div className="settings-layout"><aside className="settings-nav"><button>General</button><button>Company profile</button><button>Notifications</button><button className="active">Payment settings</button><button>Email settings</button><button>Security</button><button>Backup & restore</button><button>Integrations</button></aside><section className="panel payment-settings"><div className="panel-title"><div><h3>Payment methods</h3><p>Manage payment methods and gateway settings.</p></div><button className="primary"><Icon name="plus" size={14}/>Add method</button></div>{["bKash","Nagad","Rocket","Visa / Mastercard","Cash"].map((x,i)=><div className="payment-row" key={x}><span className={`integration-logo brand-${i%4}`}>{x[0]}</span><span><b>{x}</b><small>{i<3?"Mobile banking":i===3?"Card payments":"Cash payments"}</small></span><Status>{i===2?"Inactive":"Active"}</Status><button className="secondary">Configure</button><Icon name="dots" size={15}/></div>)}<label className="default-method">Default payment method<select><option>bKash</option><option>Cash</option></select></label><div className="form-actions"><button className="primary">Save changes</button></div></section></div>;
-  return null;
-}
-
-function SettingsContent({ title }: { title: string }) {
-  const [saved, setSaved] = useState(false);
-  const isSpecial = ["Change Password","Appearance Settings","Notification Settings","Security Settings","Payment Settings"].includes(title);
-  if (isSpecial) return <SpecialSettingsContent title={title}/>;
-  const isPermissions = title.includes("Permission");
-  const isIntegration = title.includes("Integration");
-    return <div className="settings-layout"><aside className="settings-nav"><button className="active">{title}</button><button>General settings</button><button>Notifications</button><button>Security & privacy</button><button>Billing information</button><button>Integrations</button></aside><section className="panel settings-form"><div className="settings-heading"><h3>{title}</h3><p>Update your workspace configuration and preferences.</p></div>{isPermissions ? <div className="permission-grid"><div className="permission-head"><b>Module access</b><span>View</span><span>Create</span><span>Edit</span><span>Delete</span></div>{navigation.slice(0, 9).map((item, i) => <div key={item}><b>{item}</b>{[0,1,2,3].map((n) => <label className="check" key={n}><input type="checkbox" defaultChecked={i < 5 || n < 2}/><span><Icon name="check" size={12}/></span></label>)}</div>)}</div> : isIntegration ? <div className="integration-grid">{["Google Maps", "Stripe", "QuickBooks", "Slack", "Mailchimp", "WhatsApp"].map((name, i) => <article key={name}><span className={`integration-logo brand-${i}`}>{name[0]}</span><div><h4>{name}</h4><p>Connect {name} with your Tranzora workspace.</p></div><button className={i < 2 ? "connected" : "secondary"}>{i < 2 ? "Connected" : "Connect"}</button></article>)}</div> : <form onSubmit={(e) => {e.preventDefault(); setSaved(true); setTimeout(() => setSaved(false), 2200);}}><div className="form-grid"><label>Company name<input defaultValue="Adnan Transport & Logistics" /></label><label>Business email<input type="email" defaultValue="admin@adnantransport.com" /></label><label>Phone number<input defaultValue="+880 1712 345 678" /></label><label>Time zone<select defaultValue="Dhaka"><option>Dhaka</option><option>London</option><option>New York</option></select></label><label>Currency<select defaultValue="BDT"><option>BDT — Bangladeshi Taka</option><option>USD — US Dollar</option></select></label><label>Language<select><option>English</option><option>বাংলা</option></select></label></div><div className="toggle-section"><h4>Preferences</h4>{["Email notifications", "Desktop notifications", "Weekly reports", "Two-factor authentication"].map((item, i) => <label className="toggle-row" key={item}><span><b>{item}</b><small>Receive important updates for {item.toLowerCase()}.</small></span><input type="checkbox" defaultChecked={i !== 1}/><i/></label>)}</div><div className="form-actions"><button type="button" className="secondary">Cancel</button><button className="primary">{saved ? "Changes saved ✓" : "Save changes"}</button></div></form>}</section></div>;
-}
-
-function ProfileContent() {
-  return <div className="profile-layout"><aside className="panel profile-card"><div className="large-avatar">AH<span className="online"/></div><h2>Adnan Hossain</h2><p>Fleet Administrator</p><Status>Active</Status><div className="profile-stats"><span><b>124</b><small>Activities</small></span><span><b>28</b><small>Projects</small></span><span><b>4.9</b><small>Rating</small></span></div><button className="secondary full">Change photo</button></aside><section className="panel profile-form"><div className="tabs"><button className="active">Personal information</button><button>Security</button><button>Notifications</button></div><div className="form-grid"><label>First name<input defaultValue="Adnan"/></label><label>Last name<input defaultValue="Hossain"/></label><label>Email address<input defaultValue="adnan@tranzora.com"/></label><label>Phone number<input defaultValue="+880 1712 345 678"/></label><label>Job title<input defaultValue="Fleet Administrator"/></label><label>Department<select><option>Operations</option></select></label><label className="wide">Address<textarea defaultValue="House 14, Road 7, Dhanmondi, Dhaka"/></label></div><div className="form-actions"><button className="secondary">Cancel</button><button className="primary">Save changes</button></div></section></div>;
-}
-
-function DetailsContent({ title }: { title: string }) {
-  return <><article className="panel detail-hero"><div className="detail-avatar"><Icon name={iconFor(title)} size={28}/></div><div><span className="eyebrow">{title.replace(" Details", "")} ID #TZ-48219</span><h2>{title.includes("Vehicle") ? "DHA-14-7856 · Toyota Coaster" : title.includes("Booking") ? "Dhaka to Chattogram" : "Nusrat Jahan"}</h2><p>Created on August 12, 2026 · Last updated 14 minutes ago</p></div><Status>Active</Status><button className="secondary">Edit details</button><button className="primary">More actions ▾</button></article><div className="details-grid"><section className="panel"><div className="panel-title"><div><h3>General information</h3><p>Primary record details</p></div></div><dl className="detail-list">{[["Status","Active"],["Contact","+880 1712 345 678"],["Email","contact@tranzora.com"],["Assigned driver","Arif Hossain"],["Route","Dhaka → Chattogram"],["Total amount","৳ 42,500"],["Payment","Paid"],["Reference","TZ-48219"]].map(([dt, dd]) => <div key={dt}><dt>{dt}</dt><dd>{dd}</dd></div>)}</dl></section><aside className="panel"><div className="panel-title"><div><h3>Recent activity</h3><p>Latest updates</p></div></div><div className="timeline">{["Record details updated", "Payment successfully received", "Driver was assigned", "Booking created"].map((item, i) => <div key={item}><i/><p><b>{item}</b><small>{i * 2 + 1} {i ? "hours" : "minutes"} ago by Adnan Hossain</small></p></div>)}</div></aside></div><div className="panel"><DataTable title="Trips" query="" onDelete={() => undefined}/></div></>;
-}
-
-function CalendarContent() {
-  const days = Array.from({length: 35}, (_, i) => i < 4 ? 28 + i : i - 3);
-  return <div className="calendar-layout"><article className="panel calendar"><div className="calendar-header"><button>‹</button><h3>August 2026</h3><button>›</button><div><button className="active">Month</button><button>Week</button><button>Day</button></div></div><div className="weekdays">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => <b key={d}>{d}</b>)}</div><div className="days">{days.map((d, i) => <div className={i < 4 ? "outside" : i === 18 ? "today" : ""} key={i}><span>{d}</span>{[5,8,11,15,18,21,25,29].includes(i) && <><button className={`event event-${i % 4}`}>Dhaka → {i % 2 ? "Sylhet" : "Chattogram"}</button>{i % 3 === 0 && <button className="event event-2">Vehicle service</button>}</>}</div>)}</div></article><aside className="panel agenda"><div className="panel-title"><div><h3>Upcoming bookings</h3><p>August 18, 2026</p></div></div>{places.slice(0, 5).map((place, i) => <div key={place}><span>{9 + i}:30 <small>{i % 2 ? "PM" : "AM"}</small></span><p><b>{place}</b><small>{people[i]} · Coach</small></p></div>)}</aside></div>;
-}
-
-function SupportContent() {
-  return <><div className="support-hero"><span className="support-icon">?</span><h2>How can we help you?</h2><p>Search our help center or choose a category below.</p><div><Icon name="search"/><input placeholder="Search for help articles..."/><button>Search</button></div></div><div className="support-grid">{[["Getting Started","Learn the basics and configure your workspace."],["Trips & Bookings","Manage reservations, trips and schedules."],["Fleet Management","Vehicles, drivers and maintenance help."],["Billing & Payments","Invoices, plans and payment methods."],["Account & Security","Profile, access and security settings."],["Reports & Analytics","Understand business reports and metrics."]].map(([title, text], i) => <article className="panel" key={title}><span><Icon name={(["grid","booking","vehicle","income","users","report"] as IconName[])[i]} size={22}/></span><h3>{title}</h3><p>{text}</p><a href="#">Browse articles <Icon name="arrow" size={14}/></a></article>)}</div><div className="panel contact-support"><div><h3>Still need help?</h3><p>Our support team typically replies in under 10 minutes.</p></div><button className="secondary">Email support</button><button className="primary">Start live chat</button></div></>;
-}
-
-function NotificationsContent({ detailed = false }: { detailed?: boolean }) {
-  const [selected, setSelected] = useState(0);
-  const notices = [
-    ["Engine overheating detected", "Vehicle-003 · Today, 10:20 AM", "Critical"],
-    ["Maintenance overdue", "Vehicle-001 · Today, 09:45 AM", "Warning"],
-    ["New booking received", "BK-2024-0006 · Today, 09:15 AM", "Booking"],
-    ["Driver check-in successful", "Driver-007 · Today, 07:10 AM", "Read"],
-    ["Low fuel level", "Vehicle-005 · Today, 05:50 AM", "Warning"],
-    ["Payment received", "BK-2024-0034 · Yesterday, 06:30 PM", "Payment"],
-    ["Route updated", "Route Dhaka–CTG · Yesterday, 04:20 PM", "Info"],
-  ];
-  return <div className={detailed ? "notification-split" : "panel notification-page"}><section><div className="table-tabs"><button className="active">All (24)</button><button>Unread (7)</button><button>Alerts (6)</button><button>Info (8)</button><button>System (10)</button></div><div className="notice-list">{notices.map((notice, i) => <button className={selected === i ? "selected" : ""} onClick={() => setSelected(i)} key={notice[0]}><span className={`notice-symbol notice-${i % 4}`}><Icon name={i % 3 === 0 ? "bell" : i % 3 === 1 ? "wrench" : "booking"} size={16}/></span><span><b>{notice[0]}</b><small>{notice[1]}</small></span><Status>{notice[2]}</Status><Icon name="dots" size={15}/></button>)}</div><div className="pagination"><span>Showing 1 to 7 of 24 results</span><div><button>‹</button><button className="active">1</button><button>2</button><button>3</button><button>›</button></div></div></section>{detailed && <aside className="panel notice-detail"><div className="notice-detail-title"><div><h2>{notices[selected][0]}</h2><p>29 May 2024, 10:20 AM</p></div><Status>{notices[selected][2]}</Status></div><p>Engine temperature has exceeded the normal operating range. Immediate inspection is recommended.</p><h4>Details</h4><dl className="detail-list single"><div><dt>Vehicle</dt><dd>Vehicle-003 (AC Bus)</dd></div><div><dt>Temperature</dt><dd>112 °C</dd></div><div><dt>Location</dt><dd>Mirpur Road, Dhaka</dd></div><div><dt>Reported at</dt><dd>29 May 2024, 10:20 AM</dd></div></dl><label className="detail-action">Action taken<select><option>Select action</option><option>Inspection scheduled</option><option>Vehicle stopped</option></select></label><button className="primary">Update</button></aside>}</div>;
-}
-
-function SubscriptionContent() {
-  return <div className="billing-layout"><aside className="panel plan-card"><div className="plan-status"><span>Current plan</span><Status>Active</Status></div><h2>Professional Plan</h2><strong>৳ 4,999 <small>/ month</small></strong><ul>{["Unlimited trips", "Unlimited vehicles", "Unlimited drivers", "Reports & analytics", "Priority support", "Data backup"].map(item => <li key={item}><span>✓</span>{item}</li>)}</ul><div className="renewal"><span>Next billing date</span><b>20 Jan 2027</b></div><button className="secondary full">Manage plan</button><div className="payment-card"><b>VISA</b><span>Visa ending in 4242<small>Expires 12/28</small></span></div><button className="secondary full">Update payment method</button></aside><section><article className="panel billing-history"><div className="panel-title"><div><h3>Billing history</h3><p>Your recent invoices and payments</p></div><button className="secondary">↓ Download invoices</button></div><table><thead><tr><th>Invoice ID</th><th>Date</th><th>Plan</th><th>Amount</th><th>Status</th><th>Invoice</th></tr></thead><tbody>{[1,2,3,4,5].map((n) => <tr key={n}><td>INV-2026-00{6-n}</td><td>{20-n} Aug 2026</td><td>Professional Plan</td><td>৳ 4,999</td><td><Status>Completed</Status></td><td><button className="icon-btn">↓</button></td></tr>)}</tbody></table></article><article className="panel usage-card"><div className="panel-title"><div><h3>Usage overview</h3><p>Current billing period</p></div><select><option>This month</option></select></div><div>{[["Trips","128","Unlimited",72],["Vehicles","24","Unlimited",64],["Drivers","32","Unlimited",81]].map(([label,value,max,pct]) => <section key={label as string}><span>{label}</span><b>{value} <small>/ {max}</small></b><i><em style={{width:`${pct}%`}}/></i></section>)}</div></article></section></div>;
-}
-
-function ReportsCenterContent({ title }: { title: string }) {
-  const reports = ["Trip Report", "Vehicle Report", "Driver Performance", "Income Statement", "Expense Summary", "Profit & Loss", "Customer Report", "Maintenance Report"];
-  return <><StatCards compact/><div className="reports-layout"><section className="panel"><div className="panel-title"><div><h3>Popular reports</h3><p>Generate or download your most-used reports</p></div></div><div className="report-tiles">{reports.map((report,i) => <button key={report}><span className={`report-icon avatar-${i%4}`}><Icon name={i%3===0?"trip":i%3===1?"vehicle":"report"}/></span><span><b>{report}</b><small>Detailed {report.toLowerCase()} and summary.</small></span><Icon name="arrow" size={15}/></button>)}</div></section><aside className="panel report-summary"><div className="panel-title"><div><h3>Reports by type</h3><p>24 total reports</p></div></div><Donut value={41}/><ul className="legend one-col"><li><i className="dot blue"/>Financial <b>41.7%</b></li><li><i className="dot green"/>Operational <b>33.3%</b></li><li><i className="dot yellow"/>Performance <b>16.7%</b></li><li><i className="dot red"/>Compliance <b>8.3%</b></li></ul></aside></div><div className="panel recent-reports"><div className="panel-title"><div><h3>Recent generated reports</h3><p>Latest files from {title}</p></div><a href="#">View report history</a></div><DataTable title="Reports" query="" onDelete={() => undefined}/></div></>;
-}
-
-function BackupContent() {
-  return <><div className="backup-tabs"><button className="active">Backups</button><button>Restore</button></div><div className="stats-grid"><article className="stat-card"><div className="stat-copy"><span>Total backups</span><strong>28</strong><small className="positive">+14.3% vs last month</small></div></article><article className="stat-card"><div className="stat-copy"><span>Latest backup</span><strong>29 May, 11:30 AM</strong><small>Daily backup</small></div></article><article className="stat-card"><div className="stat-copy"><span>Backup size</span><strong>2.45 GB</strong><small>Average size</small></div></article><article className="stat-card"><div className="stat-copy"><span>Next scheduled</span><strong>30 May, 11:30 AM</strong><small className="positive">Daily at 11:30 AM</small></div></article></div><div className="panel backup-history"><div className="panel-title"><div><h3>Backup history</h3><p>Available system snapshots</p></div><button className="primary"><Icon name="plus" size={14}/>Create backup</button></div><table><thead><tr><th>Backup name</th><th>Type</th><th>Date & time</th><th>Size</th><th>Status</th><th>Action</th></tr></thead><tbody>{[1,2,3,4,5,6].map((n)=><tr key={n}><td>Daily Backup – {30-n} May 2026</td><td>{n===4?"Weekly":"Daily"}</td><td>{30-n} May 2026, 11:30 AM</td><td>2.{35+n} GB</td><td><Status>Completed</Status></td><td><button className="icon-btn">↓</button></td></tr>)}</tbody></table><div className="backup-controls"><label>Backup frequency<select><option>Daily</option><option>Weekly</option></select></label><label>Backup time<input type="time" defaultValue="11:30"/></label><label>Retention period<select><option>30 days</option><option>90 days</option></select></label><button className="primary">Save settings</button></div></div></>;
-}
-
-function DatabaseContent() {
-  const collections = ["users","vehicles","drivers","trips","bookings","expenses","income","maintenance"];
-  return <><div className="stats-grid"><article className="stat-card"><div className="stat-copy"><span>Database status</span><strong className="positive">Connected</strong><small>All systems operational</small></div></article><article className="stat-card"><div className="stat-copy"><span>Database type</span><strong>MongoDB 6.0</strong><small>Community edition</small></div></article><article className="stat-card"><div className="stat-copy"><span>Database size</span><strong>2.46 GB</strong><small>Storage used</small></div></article><article className="stat-card"><div className="stat-copy"><span>Total collections</span><strong>18</strong><small>Collections</small></div></article></div><div className="database-layout"><section className="panel"><div className="panel-title"><div><h3>Collections</h3><p>Database storage overview</p></div></div><table><thead><tr><th>Collection name</th><th>Documents</th><th>Size</th><th>Index size</th><th>Total size</th><th>Action</th></tr></thead><tbody>{collections.map((name,i)=><tr key={name}><td><b>{name}</b></td><td>{28+i*31}</td><td>{72+i*13}.45 MB</td><td>{3+i}.12 MB</td><td>{78+i*15}.57 MB</td><td><button className="icon-btn">◉</button></td></tr>)}</tbody></table></section><aside className="panel database-tools"><h3>Database tools</h3>{["Optimize database","Repair database","Clear cache","View logs","Export data"].map(x=><button className="secondary" key={x}>{x}</button>)}<button className="danger-button">Drop database</button></aside></div></>;
-}
-
-function PermissionsContent() {
-  const roles=["Super Admin","Admin","Accountant","Dispatcher","Operator","Viewer"];
-  return <><div className="role-cards">{roles.map((role,i)=><article className="panel" key={role}><span className={`role-icon avatar-${i%4}`}><Icon name="users"/></span><b>{role}</b><strong>{i?3+i:1}</strong><small>Users</small></article>)}</div><section className="panel permissions-panel"><div className="panel-title"><div><h3>Permission matrix</h3><p>Module access by role</p></div><button className="primary"><Icon name="plus" size={14}/>Add role</button></div><div className="permission-table"><div><b>Module</b>{roles.map(r=><b key={r}>{r}</b>)}</div>{navigation.slice(0,9).map((module,i)=><div key={module}><b>{module}</b>{roles.map((role,j)=><span className={(i+j)%5===0?"partial":"allowed"} key={role}>{(i+j)%5===0?"—":"✓"}</span>)}</div>)}</div></section></>;
-}
-
-function IntegrationsContent() {
-  const names=["bKash","Nagad","SMS Gateway","Email SMTP","GPS Tracking API","Bangla QR","Payment Gateway","Google Maps"];
-  const [selected,setSelected]=useState(0);
-  return <div className="integrations-layout"><aside className="panel integration-list"><h3>Available integrations</h3>{names.map((name,i)=><button className={selected===i?"selected":""} onClick={()=>setSelected(i)} key={name}><span className={`integration-logo brand-${i%4}`}>{name[0]}</span><span><b>{name}</b><small>{i<2?"Mobile payment":"Connected service"}</small></span><Status>Active</Status></button>)}</aside><section className="panel integration-settings"><div className="settings-heading"><h3>{names[selected]} integration settings</h3><p>Configure credentials and connection information.</p></div><div className="form-grid"><label>Status<input value="Connected" readOnly/></label><label>Merchant account<input defaultValue="017XXXXXXXX"/></label><label className="wide">API key<input type="password" defaultValue="tranzora-api-key-2026"/></label><label className="wide">App secret<input type="password" defaultValue="tranzora-secret-key"/></label><label className="wide">Callback / webhook URL<input defaultValue="https://alamintransport.com/api/callback"/></label></div><div className="form-actions"><button className="secondary">Test connection</button><button className="primary">Save settings</button></div></section><aside className="panel integration-info"><h3>Integration info</h3><dl className="detail-list single"><div><dt>Provider</dt><dd>{names[selected]} Limited</dd></div><div><dt>Environment</dt><dd>Production</dd></div><div><dt>Last sync</dt><dd>27 May 2026, 09:45 AM</dd></div><div><dt>Status</dt><dd className="positive">All systems operational</dd></div></dl></aside></div>;
-}
-
-function AuthScreen({ screen }: { screen: Screen }) {
-  const [submitted, setSubmitted] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const isLogin = screen.title === "Login";
-  const isRegister = screen.title === "Register";
-  const isOtp = screen.title.includes("OTP");
-  const submit = (e: FormEvent) => { e.preventDefault(); setSubmitted(true); };
-  return <main className="auth-page"><section className="auth-brand"><Link href="/" className="brand brand-large"><Logo/><span>Tranzora</span></Link><div className="auth-message"><span className="auth-pill">TRANSPORT MANAGEMENT, SIMPLIFIED</span><h1>{isLogin ? "Welcome Back!" : isRegister ? "Join Tranzora today." : isOtp ? "Verify your identity." : "Forgot Password?"}</h1><p>{isLogin ? "Log in to your account to manage your entire transport business from one beautiful dashboard." : "Secure, reliable tools for modern transport teams—wherever the road takes you."}</p><div className="auth-illustration"><span className="building b1"/><span className="building b2"/><span className="building b3"/><span className="road-art"/><span className="bus-art">▰</span></div><div className="auth-features"><span><i className="blue"><Icon name="report"/></i>Real-time insights</span><span><i className="green"><Icon name="check"/></i>Secure & reliable</span><span><i className="violet"><Icon name="users"/></i>Team friendly</span></div></div><p className="auth-copyright">© 2026 Tranzora. All rights reserved.</p></section><section className="auth-form-wrap"><div className="auth-form-card"><div className="mobile-brand"><Logo/><b>Tranzora</b></div><span className="eyebrow">WELCOME TO TRANZORA</span><h2>{screen.title === "Login" ? "Log in to your account" : screen.title}</h2><p>{screen.description}</p>{submitted ? <div className="success-card"><span><Icon name="check" size={26}/></span><h3>{isOtp ? "Account verified" : isRegister ? "Account created" : isLogin ? "Welcome back" : "Check your email"}</h3><p>Your request was completed successfully.</p><Link className="primary button-link" href={screens[4].slug ? `/screens/${screens[4].slug}` : "/"}>Continue to dashboard</Link></div> : <form onSubmit={submit}>{isRegister && <div className="form-grid"><label>First name<input required placeholder="Enter first name"/></label><label>Last name<input required placeholder="Enter last name"/></label></div>}{!isOtp && <label>Email address<input required type="email" placeholder="name@company.com"/></label>}{(isLogin || isRegister) && <label>Password<div className="password-input"><input required minLength={6} type={showPassword ? "text" : "password"} placeholder="Enter your password"/><button type="button" onClick={() => setShowPassword(!showPassword)}>{showPassword ? "Hide" : "Show"}</button></div></label>}{isOtp && <div className="otp-inputs">{[0,1,2,3,4,5].map((n) => <input aria-label={`Verification digit ${n + 1}`} maxLength={1} key={n} defaultValue={n === 0 ? "1" : ""}/>)}</div>}{isLogin && <div className="remember"><label><input type="checkbox"/> Remember me</label><Link href={`/screens/${screens[2].slug}`}>Forgot password?</Link></div>}<button className="primary auth-submit">{isLogin ? "Log in" : isRegister ? "Create account" : isOtp ? "Verify OTP" : "Send reset link"}</button>{(isLogin || isRegister) && <><div className="or"><span/>or continue with<span/></div><button type="button" className="google-btn"><b>G</b> Google</button></>}<p className="auth-switch">{isLogin ? "Don't have an account?" : "Already have an account?"} <Link href={`/screens/${isLogin ? screens[1].slug : screens[0].slug}`}>{isLogin ? "Sign up" : "Log in"}</Link></p></form>}</div><Link className="back-link" href="/">← View all screens</Link></section></main>;
-}
-
-function Logo() {
-  return <span className="logo-mark"><i/><i/><i/></span>;
-}
-
-export default function AppScreen({ screen }: { screen: Screen }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [toast, setToast] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const active = useMemo(() => navigation.find((item) => screen.title.toLowerCase().includes(item.toLowerCase().replace(/s$/, ""))) || (screen.kind === "overview" ? "Dashboard" : screen.id === 106 ? "Maintenance" : ["settings","profile","backup","database","permissions","integrations","notifications","subscription"].includes(screen.kind) ? "Settings" : "Reports"), [screen]);
-  const notify = (message: string) => { setToast(message); setTimeout(() => setToast(""), 2400); };
-  if (screen.kind === "auth") return <AuthScreen screen={screen}/>;
-  const previous = screens[(screen.id - 2 + screens.length) % screens.length];
-  const next = screens[screen.id % screens.length];
-  return <div className="app-shell"><button className="mobile-menu" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Icon name="menu"/></button><aside className={`sidebar ${menuOpen ? "open" : ""}`}><div className="sidebar-top"><Link href="/" className="brand"><Logo/><span>Al Amin Transport</span></Link><button className="close-menu" onClick={() => setMenuOpen(false)}><Icon name="close"/></button></div><div className="workspace"><span className="workspace-icon">AT</span><span><small>SMART TRANSPORT SYSTEM</small><b>{screen.id >= 113 ? "Ship Transport" : screen.id >= 61 ? "Al Arin's Transport" : "Al Amin Transport"}</b></span><button>⌄</button></div><nav>{navigation.map((item) => { const target = screens.find((s) => s.id > 4 && s.title.toLowerCase().includes(item.toLowerCase().replace(/s$/, ""))) || screens[4]; return <Link onClick={() => setMenuOpen(false)} className={item === active ? "active" : ""} key={item} href={`/screens/${target.slug}`}><Icon name={iconFor(item)}/><span>{item}</span></Link>; })}</nav><div className="sidebar-help"><span>?</span><h4>Need help?</h4><p>Visit our help center for answers and support.</p><Link href={`/screens/${screens.find(s => s.title === "Help & Support")!.slug}`}>Contact support</Link></div><div className="sidebar-foot"><Logo/><div><b>Tranzora Platform</b><span>Version 2.4.0</span></div></div></aside><div className="sidebar-scrim" onClick={() => setMenuOpen(false)}/><main className="main-area"><header className="topbar"><div className="top-search"><Icon name="search"/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${screen.section.toLowerCase()}...`}/><kbd>⌘ K</kbd></div><div className="header-actions"><button className="icon-btn has-dot" aria-label="Notifications"><Icon name="bell"/></button><button className="user-menu"><span className="avatar">AU</span><span><b>Admin User</b><small>Super Admin</small></span><span>⌄</span></button></div></header><div className="page"><div className="page-heading"><div><div className="breadcrumb"><Link href="/">Dashboard</Link><span>/</span><span>{screen.section}</span></div><h1>{screen.title}</h1><p>{screen.description}</p></div><div className="page-actions"><label className="date-filter"><Icon name="booking" size={16}/><select><option>01 May 2024 – 31 May 2024</option><option>Last 30 days</option><option>This year</option></select></label>{!screen.title.includes("Notification") && <button className="primary" onClick={() => setModalOpen(true)}><Icon name="plus" size={16}/> {screen.kind === "analytics" ? "Export" : screen.kind === "settings" ? "Save changes" : screen.kind === "reports-center" ? "Generate report" : `Add ${screen.section}`}</button>}</div></div>{screen.kind === "overview" && <OverviewContent/>}{screen.kind === "analytics" && <AnalyticsContent title={screen.title}/>} {screen.kind === "table" && <><StatCards compact/><DataTable title={screen.title} query={query} onDelete={(name) => notify(`${name} removed from the current view`)}/></>}{screen.kind === "map" && <MapContent title={screen.title}/>} {screen.kind === "settings" && <SettingsContent title={screen.title}/>} {screen.kind === "profile" && <ProfileContent/>}{screen.kind === "details" && <DetailsContent title={screen.title}/>} {screen.kind === "calendar" && <CalendarContent/>}{screen.kind === "support" && <SupportContent/>}{screen.kind === "notifications" && <NotificationsContent detailed={screen.id === 106}/>} {screen.kind === "subscription" && <SubscriptionContent/>}{screen.kind === "reports-center" && <ReportsCenterContent title={screen.title}/>} {screen.kind === "backup" && <BackupContent/>}{screen.kind === "database" && <DatabaseContent/>}{screen.kind === "permissions" && <PermissionsContent/>}{screen.kind === "integrations" && <IntegrationsContent/>}<footer className="page-footer"><span>Web Screen {String(screen.id).padStart(2,"0")} · Reference board {screen.board}, panel {screen.quadrant}</span><div><Link href={`/screens/${previous.slug}`}>← Previous</Link><Link href="/">All screens</Link><Link href={`/screens/${next.slug}`}>Next →</Link></div></footer></div></main>{modalOpen && <div className="modal-backdrop" onMouseDown={() => setModalOpen(false)}><form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={(e) => {e.preventDefault(); setModalOpen(false); notify("New record added successfully");}}><div className="modal-title"><div><h2>Add {screen.section}</h2><p>Create a new record in your workspace.</p></div><button type="button" onClick={() => setModalOpen(false)}><Icon name="close"/></button></div><div className="form-grid"><label>Title<input required placeholder={`Enter ${screen.section.toLowerCase()} name`}/></label><label>Status<select><option>Active</option><option>Pending</option></select></label><label>Assigned to<input placeholder="Select team member"/></label><label>Date<input type="date" defaultValue="2026-08-26"/></label><label className="wide">Notes<textarea placeholder="Add notes or additional information"/></label></div><div className="form-actions"><button type="button" className="secondary" onClick={() => setModalOpen(false)}>Cancel</button><button className="primary">Create record</button></div></form></div>}{toast && <div className="toast"><span><Icon name="check" size={15}/></span>{toast}</div>}</div>;
+export default function AppScreen({ screen, onLoginSuccess }: { screen: Screen; onLoginSuccess?: () => void; onLogout?: () => void }) {
+  if (screen.kind === "auth") return <AuthScreen screen={screen} onLoginSuccess={onLoginSuccess} />;
+  const view = getView(screen.slug);
+  const add = addAction(screen, view);
+  const showPeriod = view ? ["table", "cashbook"].includes(view.type) : ["overview", "analytics", "reports-center"].includes(screen.kind);
+  return (
+    <Shell screen={screen} moduleId={screen.moduleId} title={screen.title} code={screen.code} description={screen.description} addHref={add?.href} addLabel={add?.label} hidePeriod={!showPeriod}>
+      <Content screen={screen} view={view} />
+    </Shell>
+  );
 }

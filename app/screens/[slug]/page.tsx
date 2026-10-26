@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import AppScreen from "@/components/AppScreen";
+import { Loading } from "@/components/ui";
 import { getScreen, screens } from "@/lib/screens";
 
 export function generateStaticParams() {
@@ -10,5 +12,9 @@ export default async function ScreenPage({ params }: { params: Promise<{ slug: s
   const { slug } = await params;
   const screen = getScreen(slug);
   if (!screen) notFound();
-  return <AppScreen screen={screen} />;
+  return (
+    <Suspense fallback={<Loading />}>
+      <AppScreen screen={screen} />
+    </Suspense>
+  );
 }
