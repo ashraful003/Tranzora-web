@@ -51,7 +51,17 @@ export type Field = {
   min?: number;
 };
 
-export type Related = { entity: CollectionKey; field: string; label: string };
+export type Related = {
+  entity: CollectionKey;
+  field: string;
+  label: string;
+  /** Section id used in `?section=` links; defaults to the label in kebab case. */
+  key?: string;
+  /** Extra field values the related records must have (also pre-filled when adding one). */
+  match?: Record<string, string>;
+};
+
+export const relatedKey = (r: Related) => r.key ?? r.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 export type EntityDef = {
   key: CollectionKey;
@@ -110,10 +120,14 @@ export const ENTITIES: Record<CollectionKey, EntityDef> = {
       { key: "notes", label: "Notes", type: "textarea", wide: true },
     ],
     related: [
+      { entity: "documents", field: "vehicleId", label: "Registration", match: { docType: "Registration", ownerType: "Vehicle" } },
+      { entity: "documents", field: "vehicleId", label: "Insurance", match: { docType: "Insurance", ownerType: "Vehicle" } },
+      { entity: "documents", field: "vehicleId", label: "Fitness", match: { docType: "Fitness", ownerType: "Vehicle" } },
+      { entity: "documents", field: "vehicleId", label: "Tax token", match: { docType: "Tax Token", ownerType: "Vehicle" } },
+      { entity: "documents", field: "vehicleId", label: "All documents", key: "documents", match: { ownerType: "Vehicle" } },
       { entity: "trips", field: "vehicleId", label: "Trips" },
       { entity: "fuel", field: "vehicleId", label: "Fuel records" },
       { entity: "maintenance", field: "vehicleId", label: "Maintenance" },
-      { entity: "documents", field: "vehicleId", label: "Documents" },
       { entity: "expenses", field: "vehicleId", label: "Expenses" },
     ],
   },
@@ -150,10 +164,10 @@ export const ENTITIES: Record<CollectionKey, EntityDef> = {
     ],
     related: [
       { entity: "trips", field: "driverId", label: "Trips" },
-      { entity: "driverPayments", field: "driverId", label: "Salary & payments" },
+      { entity: "driverPayments", field: "driverId", label: "Salary & payments", key: "payments" },
       { entity: "driverAdvances", field: "driverId", label: "Advances" },
       { entity: "fuel", field: "driverId", label: "Fuel records" },
-      { entity: "documents", field: "driverId", label: "Documents" },
+      { entity: "documents", field: "driverId", label: "Documents", match: { ownerType: "Driver" } },
     ],
   },
   staff: {
@@ -190,7 +204,6 @@ export const ENTITIES: Record<CollectionKey, EntityDef> = {
     statuses: ["Pending", "Paid"],
     transitions: { Pending: ["Paid"], Paid: [] },
     icon: "income",
-    listSlug: "027-driver-salary-and-payments",
     columns: ["code", "driverId", "type", "month", "amount", "method", "status"],
     fields: [
       { key: "driverId", label: "Driver", type: "ref", ref: "drivers", required: true },
@@ -265,7 +278,6 @@ export const ENTITIES: Record<CollectionKey, EntityDef> = {
     statuses: ["Pending", "Approved", "Settled", "Rejected"],
     transitions: { Pending: ["Approved", "Rejected"], Approved: ["Settled"], Settled: [], Rejected: ["Pending"] },
     icon: "income",
-    listSlug: "040-trip-settlement",
     columns: ["code", "tripId", "driverId", "advance", "actualExpense", "balance", "status"],
     fields: [
       { key: "tripId", label: "Trip", type: "ref", ref: "trips", required: true },
@@ -370,7 +382,7 @@ export const ENTITIES: Record<CollectionKey, EntityDef> = {
       { key: "status", label: "Status", type: "select", options: ["Active", "Inactive"], required: true },
       { key: "notes", label: "Notes", type: "textarea", wide: true },
     ],
-    related: [{ entity: "trips", field: "routeId", label: "Trips on this route" }],
+    related: [{ entity: "trips", field: "routeId", label: "Trips on this route", key: "trips" }],
   },
   geofences: {
     key: "geofences",

@@ -134,10 +134,11 @@ export default function Documents({ ownerType, title }: { ownerType?: string; ti
   );
 }
 
-function UploadModal({ ownerType, onClose }: { ownerType?: string; onClose: () => void }) {
+/** `initial` pre-fills the form, e.g. the vehicle and document type when uploading from a record. */
+export function UploadModal({ ownerType, initial, onClose }: { ownerType?: string; initial?: Record<string, string>; onClose: () => void }) {
   const toast = useToast();
   const docTypes = ENTITIES.documents.fields.find((f) => f.key === "docType")!.options!;
-  const [v, setV] = useState<Record<string, string>>({ ownerType: ownerType ?? "Vehicle", docType: ownerType === "Driver" ? "Driving Licence" : ownerType === "Finance" ? "Bank Statement" : "Registration", issueDate: today(), name: "", number: "", expiryDate: "", vehicleId: "", driverId: "" });
+  const [v, setV] = useState<Record<string, string>>({ ownerType: ownerType ?? "Vehicle", docType: ownerType === "Driver" ? "Driving Licence" : ownerType === "Finance" ? "Bank Statement" : "Registration", issueDate: today(), name: "", number: "", expiryDate: "", vehicleId: "", driverId: "", ...initial });
   const [file, setFile] = useState<{ name: string; size: string; data?: string } | null>(null);
   const [error, setError] = useState("");
   const set = (k: string, val: string) => setV((x) => ({ ...x, [k]: val }));

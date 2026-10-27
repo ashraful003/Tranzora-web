@@ -5,15 +5,24 @@ import { docStatus, ENTITIES, entityKeys, type CollectionKey, type Rec } from ".
 import { buildSeed } from "./seed";
 
 /**
- * Browser-only data store. The whole workspace (records, settings, profile, subscription,
- * permissions) lives in localStorage under one key; components read it through `useDb()` and
- * change it only through the functions exported here, so every write is logged, derived fields
- * stay consistent and all open screens re-render.
+ * Browser-only data store. Every company (workspace) keeps its records, settings, subscription
+ * and permissions in its own localStorage key, so one admin never sees another admin's data. A
+ * small directory maps each user email to its workspace for sign-in, and the session names the
+ * workspace that is open. Components read the open workspace through `useDb()` and change it only
+ * through the functions exported here, so every write is logged, derived fields stay consistent
+ * and all open screens re-render.
  */
 
-const KEY = "tranzora_db_v2";
-const BACKUP_KEY = "tranzora_backups_v1";
-const SESSION_KEY = "tranzora_logged_in";
+const DIRECTORY_KEY = "tranzora_directory_v1";
+const SESSION_KEY = "tranzora_session_v1";
+const dbKey = (ws: string) => `tranzora_ws_${ws}_db`;
+const backupKey = (ws: string) => `tranzora_ws_${ws}_backups`;
+/** The sample company every fresh browser starts with (admin@tranzora.com). */
+const DEMO_WS = "demo";
+// Single-workspace keys used before workspaces existed; migrated into the demo workspace.
+const LEGACY_KEY = "tranzora_db_v2";
+const LEGACY_BACKUP_KEY = "tranzora_backups_v1";
+const LEGACY_SESSION_KEY = "tranzora_logged_in";
 const VERSION = 2;
 
 export type Access = "full" | "view" | "none";
@@ -37,7 +46,10 @@ export type Backup = { id: string; name: string; kind: "Manual" | "Automatic" | 
 /* ------------------------------------------------------------------ state */
 
 let state: DbState | null = null;
+/** Workspace `state` belongs to; null while signed out (state is then an empty, unsaved shell). */
+let stateWs: string | null = null;
 let backups: Backup[] | null = null;
+let muted = false;
 const listeners = new Set<() => void>();
 
 const nowIso = () => new Date().toISOString();
@@ -92,48 +104,155 @@ function freshState(): DbState {
   };
 }
 
+function emptyState(): DbState {
+  return {
+    version: VERSION,
+    collections: Object.fromEntries(entityKeys.map((k) => [k, []])) as unknown as DbState["collections"],
+    seq: {},
+    settings: {},
+    subscription: { plan: "Starter", price: 0, cycle: "Monthly", status: "Trial", startedAt: today(), nextBilling: addDays(today(), 14) },
+    permissions: {},
+    sessions: [],
+    currentUserId: null,
+  };
+}
+
+/** A brand-new company: only its admin, roles and neutral reference data — no records. */
+function newWorkspaceState(admin: { name: string; email: string; password: string; company?: string }): DbState {
+  const seed = buildSeed().collections;
+  const db = emptyState();
+  const at = nowIso();
+  db.collections.roles = seed.roles;
+  db.collections.expenseCategories = seed.expenseCategories;
+  db.collections.paymentMethods = [
+    ["Cash", "Cash"],
+    ["bKash", "Mobile Banking"],
+    ["Nagad", "Mobile Banking"],
+    ["Bank transfer", "Bank"],
+    ["Cheque", "Cheque"],
+  ].map(([name, type], i) => {
+    const id = `${ENTITIES.paymentMethods.idPrefix}-${String(i + 1).padStart(4, "0")}`;
+    return { id, code: id, createdAt: at, updatedAt: at, name, type, account: "", status: "Enabled" };
+  });
+  const role = seed.roles.find((r) => r.name === "Super Admin");
+  const userId = `${ENTITIES.users.idPrefix}-0001`;
+  db.collections.users = [{ id: userId, code: userId, createdAt: at, updatedAt: at, name: admin.name, email: admin.email.trim(), phone: "", roleId: role?.id, branch: "Head office", password: admin.password, lastLogin: at, status: "Active" }];
+  db.seq = { roles: seed.roles.length, expenseCategories: seed.expenseCategories.length, paymentMethods: db.collections.paymentMethods.length, users: 1 };
+  // Blank company details so nothing falls back to the sample company's address, BIN or bank.
+  const company = { name: admin.company?.trim() || `${admin.name}'s company`, email: admin.email.trim(), address: "", phone: "", tradeLicense: "", bin: "", bank: "", bkash: "", branches: "Head office" };
+  db.settings = { company, gateway: { fromEmail: admin.email.trim() }, notifications: { recipients: admin.email.trim() } };
+  db.permissions = defaultPermissions(seed.roles);
+  db.sessions = [{ id: "S1", device: "This browser", location: "—", ip: "—", lastActive: at, current: true }];
+  db.currentUserId = userId;
+  return db;
+}
+
+function readJson<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false; // quota exceeded or storage blocked: keep working in memory
+  }
+}
+
+function readWorkspace(ws: string): DbState | null {
+  const parsed = readJson<DbState>(dbKey(ws));
+  if (!parsed || parsed.version !== VERSION || !parsed.collections) return null;
+  // Collections added after the data was first saved start empty instead of crashing.
+  for (const key of entityKeys) parsed.collections[key] ??= [];
+  return parsed;
+}
+
+const directory = () => readJson<Record<string, string>>(DIRECTORY_KEY) ?? {};
+const emailKey = (email: unknown) => String(email ?? "").trim().toLowerCase();
+const workspaceOf = (email: string) => directory()[emailKey(email)];
+const sessionWorkspace = () => readJson<{ workspace: string }>(SESSION_KEY)?.workspace ?? null;
+
+/** Points every user email of `db` at workspace `ws` (emails owned by another workspace are skipped). */
+function syncDirectory(ws: string, db: DbState) {
+  const dir = Object.fromEntries(Object.entries(directory()).filter(([, w]) => w !== ws));
+  for (const u of db.collections.users) {
+    const key = emailKey(u.email);
+    if (key && !dir[key]) dir[key] = ws;
+  }
+  writeJson(DIRECTORY_KEY, dir);
+}
+
+/** One-time move of the old single-workspace data into the demo workspace; seeds it on a fresh browser. */
+let storageReady = false;
+function ensureStorage() {
+  if (storageReady) return;
+  storageReady = true;
+  try {
+    if (localStorage.getItem(DIRECTORY_KEY)) return;
+    let demo = readJson<DbState>(LEGACY_KEY);
+    if (!demo || demo.version !== VERSION || !demo.collections) demo = freshState();
+    for (const key of entityKeys) demo.collections[key] ??= [];
+    writeJson(dbKey(DEMO_WS), demo);
+    const oldBackups = localStorage.getItem(LEGACY_BACKUP_KEY);
+    if (oldBackups) localStorage.setItem(backupKey(DEMO_WS), oldBackups);
+    syncDirectory(DEMO_WS, demo);
+    if (localStorage.getItem(LEGACY_SESSION_KEY) === "true") writeJson(SESSION_KEY, { workspace: DEMO_WS });
+    [LEGACY_KEY, LEGACY_BACKUP_KEY, LEGACY_SESSION_KEY].forEach((k) => localStorage.removeItem(k));
+  } catch {
+    /* storage blocked: the app runs signed out */
+  }
+}
+
 function load(): DbState {
   if (state) return state;
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as DbState;
-      if (parsed.version === VERSION && parsed.collections) {
-        // Collections added after the data was first saved start empty instead of crashing.
-        for (const key of entityKeys) parsed.collections[key] ??= [];
-        state = parsed;
-        return state;
-      }
-    }
-  } catch {
-    /* corrupt or blocked storage: fall back to demo data */
-  }
-  state = freshState();
-  persist();
+  ensureStorage();
+  const ws = sessionWorkspace();
+  const db = ws ? readWorkspace(ws) : null;
+  state = db ?? emptyState();
+  stateWs = db ? ws : null;
   return state;
 }
 
 function persist() {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state));
-  } catch {
-    /* quota exceeded or storage blocked: keep working in memory */
-  }
+  if (stateWs) writeJson(dbKey(stateWs), state);
 }
 
 function commit(next: DbState) {
   state = next;
   persist();
-  listeners.forEach((l) => l());
+  if (stateWs) syncDirectory(stateWs, next);
+  if (!muted) listeners.forEach((l) => l());
+}
+
+/** Runs store mutations against another workspace (sign-in checks, password reset) without showing it. */
+function inWorkspace<T>(ws: string, fn: () => T): T {
+  const prev = { state, stateWs, backups, muted };
+  state = readWorkspace(ws);
+  if (!state) throw new StoreError("This account's workspace could not be found");
+  stateWs = ws;
+  backups = null;
+  muted = true;
+  try {
+    return fn();
+  } finally {
+    ({ state, stateWs, backups, muted } = prev);
+  }
 }
 
 function subscribe(listener: () => void) {
   listeners.add(listener);
   const onStorage = (e: StorageEvent) => {
-    if (e.key === KEY) {
+    if (e.key === SESSION_KEY || (stateWs && e.key === dbKey(stateWs))) {
       state = null;
+      backups = null;
       listener();
-    } else if (e.key === BACKUP_KEY) {
+    } else if (stateWs && e.key === backupKey(stateWs)) {
       backups = null;
       listener();
     }
@@ -302,6 +421,9 @@ function validate(key: CollectionKey, data: Draft): string | null {
   if (key === "users") {
     const email = String(data.email ?? "").toLowerCase();
     if (list("users").some((u) => u.id !== data.id && String(u.email).toLowerCase() === email)) return "Another user already uses this email";
+    const owner = directory()[email.trim()];
+    if (owner && owner !== stateWs) return "This email is already registered with another company";
+    if (data.id && data.id === load().currentUserId && data.status !== "Active") return "You can't deactivate the account you are signed in with";
   }
   return null;
 }
@@ -350,7 +472,13 @@ export function setStatus(key: CollectionKey, id: string, status: string) {
   return updateRecord(key, id, { [field]: status });
 }
 
+/** Deleting your own user would lock the whole company out of its workspace. */
+function guardSelfDelete(key: CollectionKey, ids: string[]) {
+  if (key === "users" && ids.includes(String(load().currentUserId))) throw new StoreError("You can't delete the account you are signed in with");
+}
+
 export function deleteRecord(key: CollectionKey, id: string) {
+  guardSelfDelete(key, [id]);
   const db = clone(load());
   const rec = db.collections[key].find((r) => r.id === id);
   if (!rec) return;
@@ -361,6 +489,7 @@ export function deleteRecord(key: CollectionKey, id: string) {
 }
 
 export function deleteMany(key: CollectionKey, ids: string[]) {
+  guardSelfDelete(key, ids);
   const db = clone(load());
   const set = new Set(ids);
   db.collections[key] = db.collections[key].filter((r) => !set.has(r.id));
@@ -496,44 +625,64 @@ export function cancelSubscription() {
 /* ------------------------------------------------------------------ auth */
 
 export function isLoggedIn() {
-  try {
-    return localStorage.getItem(SESSION_KEY) === "true";
-  } catch {
-    return false;
-  }
+  ensureStorage();
+  const ws = sessionWorkspace();
+  return !!ws && !!readWorkspace(ws);
 }
 
 export function login(email: string, password: string): Rec {
-  const user = list("users").find((u) => String(u.email).toLowerCase() === email.trim().toLowerCase());
-  if (!user || String(user.password) !== password) {
-    logActivity("Failed login", "Authentication", `Failed sign-in attempt for ${email}`, "Warning");
+  ensureStorage();
+  const ws = workspaceOf(email);
+  const target = ws ? readWorkspace(ws) : null;
+  const user = target?.collections.users.find((u) => emailKey(u.email) === emailKey(email));
+  if (!ws || !user || String(user.password) !== password) {
+    if (ws && target) inWorkspace(ws, () => logActivity("Failed login", "Authentication", `Failed sign-in attempt for ${email}`, "Warning"));
     throw new StoreError("Email or password is incorrect");
   }
   if (user.status !== "Active") throw new StoreError(`This account is ${String(user.status).toLowerCase()} — contact your administrator`);
-  const db = clone(load());
-  db.currentUserId = user.id;
+  // Open the user's own workspace; whatever was open before is dropped from memory.
+  writeJson(SESSION_KEY, { workspace: ws });
+  state = { ...target!, currentUserId: user.id };
+  stateWs = ws;
+  backups = null;
+  const db = clone(state);
   setIn(db, "users", user.id, { lastLogin: nowIso() });
   pushLog(db, "Login", "Authentication", `${user.name} signed in`);
   commit(db);
-  localStorage.setItem(SESSION_KEY, "true");
   return user;
 }
 
+/** Creates a new, empty company workspace whose first user is this admin, then signs in. */
 export function registerAccount(data: { name: string; email: string; password: string; company?: string }) {
-  const role = list("roles").find((r) => r.name === "Super Admin");
-  const user = createRecord("users", { name: data.name, email: data.email, password: data.password, roleId: role?.id, branch: "All branches", phone: "", status: "Active" });
-  if (data.company) saveSettings("company", { name: data.company }, "Company profile");
+  ensureStorage();
+  if (!emailKey(data.email)) throw new StoreError("Email is required");
+  if (workspaceOf(data.email)) throw new StoreError("An account with this email already exists — sign in instead");
+  const ws = `ws${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  const db = newWorkspaceState(data);
+  if (!writeJson(dbKey(ws), db)) throw new StoreError("Browser storage is full or blocked — could not create the workspace");
+  syncDirectory(ws, db);
+  inWorkspace(ws, () => {
+    const next = clone(load());
+    pushLog(next, "Create", "Company", `Workspace created for ${String(db.settings.company?.name)}`);
+    pushNotice(next, "Welcome to Tranzora", "Add your vehicles, drivers and customers to get started.", "System", "Info");
+    commit(next);
+  });
   return login(data.email, data.password);
 }
 
+/** Looks a user up across all workspaces (sign-in helpers that run before anyone is signed in). */
 export function userByEmail(email: string) {
-  return list("users").find((u) => String(u.email).toLowerCase() === email.trim().toLowerCase());
+  ensureStorage();
+  const ws = workspaceOf(email);
+  return ws ? readWorkspace(ws)?.collections.users.find((u) => emailKey(u.email) === emailKey(email)) : undefined;
 }
 
 export function resetPassword(email: string, password: string) {
+  const ws = workspaceOf(email);
   const user = userByEmail(email);
-  if (!user) throw new StoreError("No account found for this email");
-  updateRecord("users", user.id, { password }, "Password reset");
+  if (!ws || !user) throw new StoreError("No account found for this email");
+  if (password.length < 6) throw new StoreError("Password must be at least 6 characters");
+  inWorkspace(ws, () => updateRecord("users", user.id, { password }, "Password reset"));
 }
 
 export function changePassword(current: string, next: string) {
@@ -546,37 +695,33 @@ export function changePassword(current: string, next: string) {
 
 export function logout() {
   try {
-    logActivity("Logout", "Authentication", `${actorName()} signed out`);
+    if (stateWs) logActivity("Logout", "Authentication", `${actorName()} signed out`);
     localStorage.removeItem(SESSION_KEY);
   } catch {
     /* ignore */
   }
+  // Forget the workspace in memory so nothing of it is shown to the next person signing in.
+  state = null;
+  stateWs = null;
+  backups = null;
+  listeners.forEach((l) => l());
 }
 
 /* ------------------------------------------------- backup / import / reset */
 
 function loadBackups(): Backup[] {
   if (backups) return backups;
-  try {
-    backups = JSON.parse(localStorage.getItem(BACKUP_KEY) ?? "[]") as Backup[];
-  } catch {
-    backups = [];
-  }
+  load();
+  backups = stateWs ? (readJson<Backup[]>(backupKey(stateWs)) ?? []) : [];
   return backups;
 }
 
 function saveBackups(next: Backup[]) {
   backups = next;
-  try {
-    localStorage.setItem(BACKUP_KEY, JSON.stringify(next));
-  } catch {
-    // Storage is full: drop the oldest snapshot and try once more.
+  if (stateWs && !writeJson(backupKey(stateWs), next)) {
+    // Storage is full: drop the oldest snapshot and try once more; the in-memory list still works.
     backups = next.slice(0, -1);
-    try {
-      localStorage.setItem(BACKUP_KEY, JSON.stringify(backups));
-    } catch {
-      /* give up silently; the in-memory list still works this session */
-    }
+    writeJson(backupKey(stateWs), backups);
   }
   listeners.forEach((l) => l());
 }
@@ -626,17 +771,30 @@ export function importJson(text: string, source = "file") {
   if (!parsed || typeof parsed !== "object" || !parsed.collections || parsed.version !== VERSION) throw new StoreError("This is not a Tranzora data export");
   for (const key of entityKeys) parsed.collections[key] ??= [];
   const current = load();
-  parsed.currentUserId = current.currentUserId && parsed.collections.users.some((u) => u.id === current.currentUserId) ? current.currentUserId : parsed.collections.users[0]?.id ?? null;
+  // The signed-in user must still be able to sign in after the restore.
+  const me = getRecord("users", current.currentUserId);
+  if (me && !parsed.collections.users.some((u) => emailKey(u.email) === emailKey(me.email))) parsed.collections.users = [me, ...parsed.collections.users.filter((u) => u.id !== me.id)];
+  parsed.currentUserId = me ? (parsed.collections.users.find((u) => emailKey(u.email) === emailKey(me.email))?.id ?? me.id) : (parsed.collections.users[0]?.id ?? null);
   const db = clone(parsed);
   pushLog(db, "Restore", "Backup & Restore", `Data restored from ${source}`, "Warning");
   commit(db);
 }
 
+/** The sample company goes back to its sample data; any other company back to an empty workspace. */
 export function resetDemoData() {
-  const fresh = freshState();
-  pushLog(fresh, "Reset", "Database", "Workspace reset to demo data", "Warning");
+  const me = currentUser();
+  const company = load().settings.company;
+  const fresh =
+    stateWs === DEMO_WS || !me
+      ? freshState()
+      : newWorkspaceState({ name: String(me.name), email: String(me.email), password: String(me.password), company: String(company?.name ?? "") });
+  if (stateWs !== DEMO_WS && company) fresh.settings.company = { ...fresh.settings.company, ...company };
+  pushLog(fresh, "Reset", "Database", stateWs === DEMO_WS ? "Workspace reset to demo data" : "Workspace reset — all records removed", "Warning");
   commit(fresh);
 }
+
+/** True for the built-in sample company (used to word the reset action). */
+export const isDemoWorkspace = () => (load(), stateWs === DEMO_WS);
 
 /** Re-applies computed fields and invoice balances (the "rebuild indexes" tool). */
 export function rebuildDerived() {

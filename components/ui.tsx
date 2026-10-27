@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { statusClass } from "@/lib/db/format";
 
 export type IconName =
@@ -286,6 +286,13 @@ export function Dropdown({
       window.removeEventListener("resize", close);
     };
   }, [open]);
+  // A menu wider than the space beside its button (e.g. notifications on a phone) is pulled back on screen.
+  useLayoutEffect(() => {
+    const m = menuRef.current;
+    if (!m || pos?.left !== undefined) return;
+    const r = m.getBoundingClientRect();
+    if (r.left < 8) setPos((p) => (p ? { ...p, right: undefined, left: 8 } : p));
+  }, [pos]);
   const toggle = (btn: HTMLElement) => {
     if (open) return setPos(null);
     const r = btn.getBoundingClientRect();
@@ -351,13 +358,14 @@ export function LineChart({ series, labels, color = "#1769e8", compare }: { seri
         <path d={path(series)} fill="none" stroke={color} strokeWidth="2.6" />
         {series.map((v, i) => (
           <g key={i}>
-            <rect x={x(i) - w / series.length / 2} y="0" width={w / series.length} height={h} fill="transparent" onMouseEnter={() => setHover(i)} />
+            {/* hover band around the point, clamped to the chart so edge bands don't spill out */}
+            <rect x={Math.max(0, x(i) - w / series.length / 2)} y="0" width={Math.min(w, x(i) + w / series.length / 2) - Math.max(0, x(i) - w / series.length / 2)} height={h} fill="transparent" onMouseEnter={() => setHover(i)} />
             <circle cx={x(i)} cy={y(v)} r={hover === i ? 5 : 3} fill="#fff" stroke={color} strokeWidth="2" />
           </g>
         ))}
       </svg>
       {hover !== null && (
-        <div className="rx-chart-tip" style={{ left: `${(x(hover) / w) * 100}%` }}>
+        <div className="rx-chart-tip" style={{ left: `${(x(hover) / w) * 100}%`, transform: `translateX(${x(hover) < w * 0.15 ? "0" : x(hover) > w * 0.85 ? "-100%" : "-50%"})` }}>
           <b>{labels[hover]}</b>
           {series[hover]!.toLocaleString("en-IN")}
         </div>

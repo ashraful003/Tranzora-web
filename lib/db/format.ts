@@ -60,7 +60,8 @@ export function display(key: CollectionKey, name: string, rec: Rec): string {
     case "ref":
       return refLabel(f.ref!, v);
     case "number":
-      return typeof v === "number" ? v.toLocaleString("en-IN") : String(v);
+      // Years are labels, not quantities: 2017, not "2,017".
+      return typeof v === "number" && !/year/i.test(name) ? v.toLocaleString("en-IN") : String(v);
     default:
       return name === "password" ? "••••••••" : String(v);
   }

@@ -7,7 +7,7 @@ import { months } from "@/lib/analytics";
 import { ago, date, dateTime, downloadFile, money, toCsv } from "@/lib/db/format";
 import { ENTITIES, entityKeys, type CollectionKey, type Rec } from "@/lib/db/schema";
 import {
-  cancelSubscription, changePlan, createBackup, listBackups, createRecord, deleteBackup, exportJson, getSettings, importJson, list, logActivity, num, PLANS, purgeCollection, rebuildDerived, recordCount, resetDemoData,
+  cancelSubscription, changePlan, createBackup, listBackups, createRecord, deleteBackup, exportJson, getSettings, importJson, isDemoWorkspace, list, logActivity, num, PLANS, purgeCollection, rebuildDerived, recordCount, resetDemoData,
   restoreBackup, saveSettings, savePermissions, seedRolePermissions, StoreError, useBackups, useDb, type Crud, type DbState,
 } from "@/lib/db/store";
 import { modules } from "@/lib/screens";
@@ -454,11 +454,11 @@ export function BackupContent() {
       </div>
       <div className="panel rx-danger-zone">
         <div>
-          <b>Reset to demo data</b>
-          <small>Replaces every record with the original sample data. Take a snapshot first if you want to keep your changes.</small>
+          <b>{isDemoWorkspace() ? "Reset to demo data" : "Reset workspace"}</b>
+          <small>{isDemoWorkspace() ? "Replaces every record with the original sample data." : "Removes every record from your company's workspace; your account and company profile stay."} Take a snapshot first if you want to keep your changes.</small>
         </div>
-        <button type="button" className="rx-danger" onClick={() => setConfirm({ title: "Reset all data?", message: "Every record, setting and change will be replaced with the demo data. A safety snapshot is taken first.", label: "Reset", run: () => (createBackup("Before reset", "Before restore"), resetDemoData(), toast("Workspace reset to demo data")) })}>
-          <Icon name="refresh" size={14} /> Reset demo data
+        <button type="button" className="rx-danger" onClick={() => setConfirm({ title: "Reset all data?", message: isDemoWorkspace() ? "Every record, setting and change will be replaced with the demo data. A safety snapshot is taken first." : "Every record will be removed. A safety snapshot is taken first.", label: "Reset", run: () => (createBackup("Before reset", "Before restore"), resetDemoData(), toast("Workspace reset")) })}>
+          <Icon name="refresh" size={14} /> {isDemoWorkspace() ? "Reset demo data" : "Reset workspace"}
         </button>
       </div>
 
@@ -515,7 +515,9 @@ export function DatabaseContent() {
     { label: "Purge read notifications", help: "Delete notifications already read", run: () => toast(`${purgeCollection("notifications", (n) => !!n.read, "Read notifications purged")} notifications removed`) },
     { label: "Trim audit log (> 30 days)", help: "Keep only the last 30 days of activity", run: () => toast(`${purgeCollection("auditLogs", (l) => Date.parse(String(l.createdAt)) < Date.now() - 30 * 86400000, "Audit log trimmed")} entries removed`) },
     { label: "Export JSON dump", help: "Download the complete database", run: () => (downloadFile(`tranzora-db-${new Date().toISOString().slice(0, 10)}.json`, exportJson(), "application/json"), toast("Database exported")) },
-    { label: "Reset demo data", help: "Replace everything with sample data", danger: true, run: () => setConfirm({ title: "Reset all data?", message: "Every record will be replaced with the demo data. Use Backup & Restore first if you need a copy.", run: () => (resetDemoData(), toast("Workspace reset")) }) },
+    isDemoWorkspace()
+      ? { label: "Reset demo data", help: "Replace everything with sample data", danger: true, run: () => setConfirm({ title: "Reset all data?", message: "Every record will be replaced with the demo data. Use Backup & Restore first if you need a copy.", run: () => (resetDemoData(), toast("Workspace reset")) }) }
+      : { label: "Reset workspace", help: "Remove every record from this company", danger: true, run: () => setConfirm({ title: "Reset all data?", message: "Every record will be removed. Use Backup & Restore first if you need a copy.", run: () => (resetDemoData(), toast("Workspace reset")) }) },
   ];
   return (
     <>

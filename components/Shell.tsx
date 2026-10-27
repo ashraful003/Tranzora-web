@@ -8,6 +8,7 @@ import { ago, initials } from "@/lib/db/format";
 import { ENTITIES, type CollectionKey } from "@/lib/db/schema";
 import { getRecord, isLoggedIn, logout, markAllNotifications, markNotification, recordLabel, useDb } from "@/lib/db/store";
 import { modules, screens, type Screen } from "@/lib/screens";
+import { getView, isRecordScreen } from "@/lib/views";
 import { Dropdown, Icon, iconFor, Loading, Logo } from "./ui";
 import { useAppearance } from "./useAppearance";
 
@@ -27,6 +28,33 @@ const SEARCHABLE: CollectionKey[] = ["trips", "vehicles", "drivers", "customers"
 export function screenBySlug(slug: string) {
   return screens.find((s) => s.slug === slug);
 }
+
+/** Screens that get their own tab; add, edit and details open from a record instead. */
+const moduleTabs = (moduleId: number) => screens.filter((s) => s.moduleId === moduleId && s.kind !== "auth" && !isRecordScreen(s.slug));
+
+const NAV_LABELS: Record<string, string> = {
+  "Dashboard & Business Analytics": "Dashboard",
+  "Vehicle / Fleet Management": "Vehicles",
+  "Driver & Staff Management": "Drivers & Staff",
+  "Trip Management": "Trips",
+  "Booking Management": "Bookings",
+  "Customer Management": "Customers",
+  "Route & Vehicle Tracking": "Routes & Tracking",
+  "Fuel Management": "Fuel",
+  "Maintenance Management": "Maintenance",
+  "Income & Expense Management": "Income & Expense",
+  "Invoice, Bill & Challan": "Invoices & Challans",
+  "Accounts & Payment Management": "Accounts & Payments",
+  "Reports & Analytics": "Reports",
+  "Document Management": "Documents",
+  "Subscription & Billing": "Subscription",
+  "User, Roles & Permissions": "Users & Roles",
+  "Notifications & Communication": "Notifications",
+  "Company & Profile Settings": "Settings",
+  "System Administration & Security": "System & Security",
+};
+/** Short module name for the sidebar and breadcrumb. */
+export const navLabel = (title: string) => NAV_LABELS[title] ?? title;
 
 function GlobalSearch({ query, setQuery }: { query: string; setQuery: (q: string) => void }) {
   const db = useDb();
@@ -64,8 +92,8 @@ function GlobalSearch({ query, setQuery }: { query: string; setQuery: (q: string
     }
     out.sort((a, b) => Number(!a.label.toLowerCase().includes(q)) - Number(!b.label.toLowerCase().includes(q)));
     out.splice(9);
-    const screenHits = screens.filter((s) => s.kind !== "auth" && s.title.toLowerCase().includes(q)).slice(0, 3);
-    return [...screenHits.map((s) => ({ key: "screen" as unknown as CollectionKey, id: s.slug, label: s.title, sub: `Screen ${s.code}` })), ...out];
+    const screenHits = screens.filter((s) => s.kind !== "auth" && !isRecordScreen(s.slug) && s.title.toLowerCase().includes(q)).slice(0, 3);
+    return [...screenHits.map((s) => ({ key: "screen" as unknown as CollectionKey, id: s.slug, label: s.title, sub: `Page · ${navLabel(s.moduleTitle)}` })), ...out];
   }, [db, query]);
 
   const go = (r: (typeof results)[number]) => {
@@ -191,7 +219,7 @@ export type ShellProps = {
   children: React.ReactNode;
 };
 
-export default function Shell({ screen, moduleId, title, code, description, crumbs, actions, addHref, addLabel = "Add new", hidePeriod, children }: ShellProps) {
+export default function Shell({ screen, moduleId, title, description, crumbs, actions, addHref, addLabel = "Add new", hidePeriod, children }: ShellProps) {
   const router = useRouter();
   const db = useDb();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -219,9 +247,8 @@ export default function Shell({ screen, moduleId, title, code, description, crum
   const currentModule = modules.find((m) => m.id === moduleId) ?? modules[1]!;
   const user = db ? getRecord("users", db.currentUserId) : undefined;
   const role = user ? getRecord("roles", user.roleId as string) : undefined;
-  const idx = screen ? screens.findIndex((s) => s.slug === screen.slug) : -1;
-  const previous = idx > 0 ? screens[idx - 1] : undefined;
-  const next = idx >= 0 && idx < screens.length - 1 ? screens[idx + 1] : undefined;
+  // Settings screens have their own side menu, so the module tabs would only repeat it.
+  const tabs = screen && !isRecordScreen(screen.slug) && getView(screen.slug)?.type !== "settings" ? moduleTabs(currentModule.id) : [];
   const profileSlug = screens.find((s) => s.code === "19.2")?.slug;
   const settingsSlug = screens.find((s) => s.code === "19.4")?.slug;
   const passwordSlug = screens.find((s) => s.code === "19.3")?.slug;
@@ -259,10 +286,7 @@ export default function Shell({ screen, moduleId, title, code, description, crum
               .map((mod) => (
                 <Link onClick={() => setMenuOpen(false)} className={mod.id === moduleId ? "active" : ""} key={mod.id} href={`/screens/${mod.defaultSlug}`} title={mod.title}>
                   <Icon name={iconFor(mod.title)} />
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {mod.code}. {mod.title.replace(/ Management| & Business Analytics| Administration & Security/g, "")}
-                  </span>
-                  <small className="badge">{mod.subModules.length}</small>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{navLabel(mod.title)}</span>
                 </Link>
               ))}
           </nav>
@@ -335,10 +359,8 @@ export default function Shell({ screen, moduleId, title, code, description, crum
                 <div className="breadcrumb">
                   <Link href="/">Dashboard</Link>
                   <span>/</span>
-                  <Link href={`/screens/${currentModule.defaultSlug}`}>
-                    Module {currentModule.code}: {currentModule.title}
-                  </Link>
-                  {(crumbs ?? []).map((c) => (
+                  <Link href={`/screens/${currentModule.defaultSlug}`}>{navLabel(currentModule.title)}</Link>
+                  {(crumbs ?? []).filter((c, i) => i > 0 || c.label !== navLabel(currentModule.title)).map((c) => (
                     <span key={c.label} className="rx-crumb">
                       <span>/</span>
                       {c.href ? <Link href={c.href}>{c.label}</Link> : <span style={{ color: "var(--ink)", fontWeight: 600 }}>{c.label}</span>}
@@ -347,16 +369,11 @@ export default function Shell({ screen, moduleId, title, code, description, crum
                   {!crumbs && (
                     <>
                       <span>/</span>
-                      <span style={{ color: "var(--ink)", fontWeight: 600 }}>
-                        {code} {title}
-                      </span>
+                      <span style={{ color: "var(--ink)", fontWeight: 600 }}>{title}</span>
                     </>
                   )}
                 </div>
-                <h1>
-                  {code ? `${code} ` : ""}
-                  {title}
-                </h1>
+                <h1>{title}</h1>
                 {description && <p>{description}</p>}
               </div>
               <div className="page-actions">
@@ -393,12 +410,11 @@ export default function Shell({ screen, moduleId, title, code, description, crum
               </div>
             </div>
 
-            {screen && (
+            {screen && tabs.length > 1 && (
               <div className="submodule-tabs-wrap">
                 <div className="submodule-tabs-scroll">
-                  {currentModule.subModules.map((sub) => (
+                  {tabs.map((sub) => (
                     <Link key={sub.code} href={`/screens/${sub.slug}`} className={`submodule-tab ${sub.slug === screen.slug ? "active" : ""}`}>
-                      <span className="tab-code">{sub.code}</span>
                       <span className="tab-title">{sub.title}</span>
                     </Link>
                   ))}
@@ -409,11 +425,8 @@ export default function Shell({ screen, moduleId, title, code, description, crum
             {children}
 
             <footer className="page-footer">
-              <span>{screen ? `Module ${screen.moduleCode} · Sub-module ${screen.code} · Tranzora TMS 2026` : "Tranzora TMS 2026 · data stored on this device"}</span>
-              <div>
-                {previous && previous.kind !== "auth" && <Link href={`/screens/${previous.slug}`}>← {previous.title}</Link>}
-                {next && <Link href={`/screens/${next.slug}`}>{next.title} →</Link>}
-              </div>
+              <span>© 2026 {String(db.settings.company?.name ?? "Al Amin Transport Ltd.")} · Tranzora TMS</span>
+              <span>Data stored securely on this device</span>
             </footer>
           </div>
         </main>

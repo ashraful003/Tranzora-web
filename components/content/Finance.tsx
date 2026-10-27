@@ -599,7 +599,7 @@ export function Cashbook() {
                   <tr key={e.id} className="rx-row" onClick={() => router.push(e.href)} tabIndex={0} onKeyDown={(ev) => ev.key === "Enter" && router.push(e.href)}>
                     <td>{date(e.date)}</td>
                     <td>
-                      <span className="primary-cell">{e.ref}</span>
+                      <span className="primary-cell rx-nowrap">{e.ref}</span>
                     </td>
                     <td className="rx-cell-text">{e.head}</td>
                     <td className="rx-cell-text">{e.party}</td>

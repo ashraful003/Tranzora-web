@@ -140,7 +140,7 @@ export function buildOverview(slug: string, db: DbState, period: Period): Dashbo
       stats: [
         { label: "Trips in period", value: String(trips.length), note: `${trips.filter((t) => t.status === "Completed").length} completed`, href: "/screens/031-trip-list" },
         { label: "Active now", value: String(active.length), note: "dispatched or on the road", positive: true, href: "/screens/037-trip-status-and-tracking" },
-        { label: "Awaiting dispatch", value: String(c.trips.filter((t) => ["Draft", "Planned", "Approved"].includes(String(t.status))).length), note: "needs vehicle / driver", href: "/screens/035-vehicle-assignment" },
+        { label: "Awaiting dispatch", value: String(c.trips.filter((t) => ["Draft", "Planned", "Approved"].includes(String(t.status))).length), note: "needs vehicle / driver", href: "/screens/031-trip-list" },
         { label: "Cancelled", value: String(trips.filter((t) => t.status === "Cancelled").length), note: pct(trips.filter((t) => t.status === "Cancelled").length, trips.length) + " of trips", positive: false },
       ],
       trend: { title: "Trips per month", subtitle: "Last 6 months, by start date", ...tm, legend: ["Trips"] },
@@ -158,15 +158,15 @@ export function buildOverview(slug: string, db: DbState, period: Period): Dashbo
     return {
       stats: [
         { label: "Open jobs", value: String(open.length), note: "requested, scheduled or in progress", href: "/screens/069-maintenance-list" },
-        { label: "In workshop", value: String(c.vehicles.filter((v) => v.status === "Maintenance").length), note: "vehicles unavailable", positive: false, href: "/screens/021-vehicle-status-management" },
-        { label: "Completed in period", value: String(fin.maint.filter((m) => m.status === "Completed").length), note: "jobs closed", positive: true, href: "/screens/072-maintenance-history" },
+        { label: "In workshop", value: String(c.vehicles.filter((v) => v.status === "Maintenance").length), note: "vehicles unavailable", positive: false, href: "/screens/012-vehicle-list" },
+        { label: "Completed in period", value: String(fin.maint.filter((m) => m.status === "Completed").length), note: "jobs closed", positive: true, href: "/screens/069-maintenance-list" },
         { label: "Maintenance cost", value: money(fin.maint.reduce((s, m) => s + n(m.cost), 0)), note: "parts + labour in period", href: "/screens/074-maintenance-cost-analysis" },
       ],
       trend: { title: "Maintenance cost trend", subtitle: "Parts and labour, last 6 months", ...cost, color: "#16a879", legend: ["Cost"] },
       donut: { title: "Jobs by type", subtitle: `${c.maintenance.length} jobs recorded`, segments: countBy(c.maintenance, "serviceType"), caption: "Jobs" },
       panels: [
         { kind: "list", title: "Upcoming service", subtitle: "Sorted by scheduled date", rows: upcomingMaintenance(db), href: "/screens/071-maintenance-schedule", empty: "No service is due." },
-        { kind: "list", title: "Vehicles in workshop", subtitle: "Currently under maintenance", rows: c.vehicles.filter((v) => v.status === "Maintenance").map((v) => ({ label: String(v.regNo), sub: String(v.type), status: "Maintenance", href: href("vehicles", v.id) })), href: "/screens/021-vehicle-status-management", empty: "Every vehicle is on the road." },
+        { kind: "list", title: "Vehicles in workshop", subtitle: "Currently under maintenance", rows: c.vehicles.filter((v) => v.status === "Maintenance").map((v) => ({ label: String(v.regNo), sub: String(v.type), status: "Maintenance", href: href("vehicles", v.id) })), href: "/screens/012-vehicle-list", empty: "Every vehicle is on the road." },
       ],
     };
   }
@@ -188,7 +188,7 @@ export function buildOverview(slug: string, db: DbState, period: Period): Dashbo
       donut: { title: "Receipts by method", subtitle: "Cleared payments", segments: sumBy(c.payments.filter((p) => p.status === "Cleared"), "method", (p) => n(p.amount)), center: compactMoney(c.payments.filter((p) => p.status === "Cleared").reduce((s, p) => s + n(p.amount), 0)), caption: "Collected" },
       panels: [
         { kind: "list", title: "Recent payments", subtitle: "Latest money receipts", rows: [...c.payments].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 5).map((p) => ({ label: lbl(db, "customers", p.customerId), sub: `${p.code} · ${p.method}`, value: money(p.amount), status: String(p.status), href: href("payments", p.id) })), href: "/screens/092-payment-records" },
-        { kind: "list", title: "Overdue & unpaid invoices", subtitle: "Follow up for collection", rows: c.invoices.filter((i) => ["Overdue", "Partially Paid", "Sent"].includes(String(i.status))).slice(0, 5).map((i) => ({ label: `${i.code} · ${lbl(db, "customers", i.customerId)}`, sub: `Due ${date(i.dueDate)}`, value: money(n(i.total) - n(i.paid)), status: String(i.status), href: href("invoices", i.id) })), href: "/screens/090-invoice-payment-status", empty: "All invoices are paid." },
+        { kind: "list", title: "Overdue & unpaid invoices", subtitle: "Follow up for collection", rows: c.invoices.filter((i) => ["Overdue", "Partially Paid", "Sent"].includes(String(i.status))).slice(0, 5).map((i) => ({ label: `${i.code} · ${lbl(db, "customers", i.customerId)}`, sub: `Due ${date(i.dueDate)}`, value: money(n(i.total) - n(i.paid)), status: String(i.status), href: href("invoices", i.id) })), href: "/screens/084-invoice-list", empty: "All invoices are paid." },
       ],
     };
   }

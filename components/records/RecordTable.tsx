@@ -35,7 +35,20 @@ function statsFor(entity: CollectionKey, rows: Rec[]): StatItem[] {
   return items.slice(0, 4).map((s, i) => ({ ...s, icon: s.icon === "check" ? icons[i] : s.icon }));
 }
 
-export default function RecordTable({ view, embedded, rowsOverride, title }: { view: TableView; embedded?: boolean; rowsOverride?: Rec[]; title?: string }) {
+export default function RecordTable({
+  view,
+  embedded,
+  rowsOverride,
+  title,
+  addAction,
+}: {
+  view: TableView;
+  embedded?: boolean;
+  rowsOverride?: Rec[];
+  title?: string;
+  /** Replaces the embedded "Add" link (e.g. documents open the upload dialog instead of a form). */
+  addAction?: { label: string; onClick: () => void };
+}) {
   const db = useDb();
   const router = useRouter();
   const toast = useToast();
@@ -113,9 +126,18 @@ export default function RecordTable({ view, embedded, rowsOverride, title }: { v
           {text}
         </Link>
       );
-    if (col === "code" || col === def.titleField) return <span className="primary-cell">{text}</span>;
+    if (col === "code" || col === def.titleField)
+      return (
+        <span className={`primary-cell ${col === "code" ? "rx-nowrap" : "rx-cell-text"}`} title={text}>
+          {text}
+        </span>
+      );
     if (f.type === "money") return <span className="rx-num">{text}</span>;
-    return <span className="rx-cell-text" title={text}>{text}</span>;
+    return (
+      <span className={`rx-cell-text ${["date", "phone", "number"].includes(f.type) ? "rx-nowrap" : ""}`} title={text}>
+        {text}
+      </span>
+    );
   };
 
   return (
@@ -154,17 +176,22 @@ export default function RecordTable({ view, embedded, rowsOverride, title }: { v
               className="rx-btn"
               onClick={() => {
                 exportRecordsCsv(entity, rows, columns);
-                toast(`${rows.length} ${def.label.toLowerCase()} exported to CSV`);
+                toast(`${rows.length} ${(rows.length === 1 ? def.singular : def.label).toLowerCase()} exported to CSV`);
               }}
               disabled={!rows.length}
             >
               <Icon name="download" size={13} /> Export
             </button>
-            {embedded && (
-              <Link className="rx-btn rx-btn-primary" href={newHref(entity, view.defaults)}>
-                <Icon name="plus" size={13} /> Add
-              </Link>
-            )}
+            {embedded &&
+              (addAction ? (
+                <button type="button" className="rx-btn rx-btn-primary" onClick={addAction.onClick}>
+                  <Icon name="plus" size={13} /> {addAction.label}
+                </button>
+              ) : (
+                <Link className="rx-btn rx-btn-primary" href={newHref(entity, view.defaults)}>
+                  <Icon name="plus" size={13} /> Add
+                </Link>
+              ))}
           </div>
         </div>
 
@@ -176,6 +203,10 @@ export default function RecordTable({ view, embedded, rowsOverride, title }: { v
               base.length ? (
                 <button type="button" className="secondary" onClick={() => setTab("All")}>
                   Show all
+                </button>
+              ) : addAction ? (
+                <button type="button" className="primary" onClick={addAction.onClick}>
+                  <Icon name="plus" size={14} /> {addAction.label}
                 </button>
               ) : (
                 <Link className="primary" href={newHref(entity, view.defaults)}>
@@ -240,17 +271,12 @@ export default function RecordTable({ view, embedded, rowsOverride, title }: { v
                               {r[view.assign.field] ? "Change" : "Assign"}
                             </button>
                           )}
-                          <button type="button" title="View details" aria-label="View details" onClick={() => open(r)}>
-                            <Icon name="eye" size={14} />
-                          </button>
+                          {/* The row opens the record; delete and the rest live in the ⋯ menu to keep the column narrow. */}
                           {def.fields.some((f) => !f.readOnly) && (
                             <button type="button" title="Edit" aria-label="Edit" onClick={() => router.push(`/records/${entity}/${r.id}/edit`)}>
                               <Icon name="edit" size={14} />
                             </button>
                           )}
-                          <button type="button" className="delete" title="Delete" aria-label="Delete" onClick={() => setConfirm({ ids: [r.id] })}>
-                            <Icon name="trash" size={14} />
-                          </button>
                           <Dropdown trigger={<Icon name="dots" size={15} />} className="rx-more">
                             {(close) => (
                               <>
@@ -358,10 +384,14 @@ export default function RecordTable({ view, embedded, rowsOverride, title }: { v
           danger
           onClose={() => setConfirm(null)}
           onConfirm={() => {
-            if (confirm.ids.length > 1) deleteMany(entity, confirm.ids);
-            else deleteRecord(entity, confirm.ids[0]!);
-            setSelected(new Set());
-            toast(`${confirm.ids.length > 1 ? `${confirm.ids.length} records` : def.singular} deleted`);
+            try {
+              if (confirm.ids.length > 1) deleteMany(entity, confirm.ids);
+              else deleteRecord(entity, confirm.ids[0]!);
+              setSelected(new Set());
+              toast(`${confirm.ids.length > 1 ? `${confirm.ids.length} records` : def.singular} deleted`);
+            } catch (e) {
+              toast(e instanceof StoreError ? e.message : "Could not delete", "error");
+            }
           }}
         />
       )}
@@ -371,7 +401,7 @@ export default function RecordTable({ view, embedded, rowsOverride, title }: { v
   );
 }
 
-function AssignModal({ view, rec, onClose }: { view: TableView; rec: Rec; onClose: () => void }) {
+export function AssignModal({ view, rec, onClose }: { view: TableView; rec: Rec; onClose: () => void }) {
   const a = view.assign!;
   const toast = useToast();
   const [value, setValue] = useState(String(rec[a.field] ?? ""));
