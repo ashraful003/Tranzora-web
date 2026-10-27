@@ -55,13 +55,13 @@ export default function AuthScreen({ screen, onLoginSuccess }: { screen: Screen;
     else router.push("/");
   };
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setBusy(true);
     try {
       if (isLogin) {
-        login(email, password);
+        await login(email, password);
         try {
           if (remember) localStorage.setItem(REMEMBER_KEY, email);
           else localStorage.removeItem(REMEMBER_KEY);
@@ -73,7 +73,7 @@ export default function AuthScreen({ screen, onLoginSuccess }: { screen: Screen;
       }
       if (isRegister) {
         if (password.length < 6) throw new StoreError("Password must be at least 6 characters");
-        registerAccount({ name: `${first.trim()} ${last.trim()}`.trim(), email: email.trim(), password, company: company.trim() || undefined });
+        await registerAccount({ name: `${first.trim()} ${last.trim()}`.trim(), email: email.trim(), password, company: company.trim() || undefined });
         setDone("Account created — you are signed in.");
         return;
       }

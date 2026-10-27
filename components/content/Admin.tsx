@@ -523,10 +523,10 @@ export function DatabaseContent() {
     <>
       <StatGrid
         items={[
-          { label: "Database status", value: "Healthy", note: "browser local storage", positive: true, icon: "check" },
-          { label: "Engine", value: "LocalStorage", note: "JSON document store", icon: "database" },
+          { label: "Database status", value: "Healthy", note: "project local storage (data/)", positive: true, icon: "check" },
+          { label: "Engine", value: "Project Local Storage", note: "JSON file store (data/workspaces)", icon: "database" },
           { label: "Collections", value: String(entityKeys.length), note: `${recordCount(db).toLocaleString("en-IN")} records`, icon: "grid" },
-          { label: "Data size", value: `${(total / 1024).toFixed(0)} KB`, note: `${((total / (5 * 1048576)) * 100).toFixed(1)}% of 5 MB quota`, icon: "report" },
+          { label: "Data size", value: `${(total / 1024).toFixed(0)} KB`, note: "Persistent disk storage in project", icon: "report" },
         ]}
       />
       <div className="database-layout">

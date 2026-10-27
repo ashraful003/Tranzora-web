@@ -44,6 +44,95 @@ export type DbState = {
 export type Backup = { id: string; name: string; kind: "Manual" | "Automatic" | "Before restore"; createdAt: string; size: number; records: number; data: string };
 
 /* ------------------------------------------------------------------ state */
+/* ------------------------------------------- project storage integration */
+
+let projectSyncStarted = false;
+let projectSyncDone = false;
+
+function postProjectStorage(body: Record<string, unknown>) {
+  if (typeof window === "undefined") return;
+  fetch("/api/storage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).catch((err) => {
+    console.warn("[ProjectStorage] Error syncing to project:", err);
+  });
+}
+
+function syncWorkspaceToProjectStorage(ws: string, db: DbState, dir?: Record<string, string>) {
+  postProjectStorage({
+    action: "commit",
+    workspace: ws,
+    db,
+    directory: dir,
+  });
+}
+
+function syncSessionToProjectStorage(session: { workspace: string } | null) {
+  postProjectStorage({
+    action: "session",
+    session,
+  });
+}
+
+function syncBackupsToProjectStorage(ws: string, backupsList: Backup[]) {
+  postProjectStorage({
+    action: "backups",
+    workspace: ws,
+    backups: backupsList,
+  });
+}
+
+function syncKeyToProjectStorage(key: string, value: unknown) {
+  postProjectStorage({
+    action: "set_key",
+    key,
+    value,
+  });
+}
+
+export function syncWithProjectStorage(): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false);
+
+  const activeWs = sessionWorkspace();
+  const url = activeWs ? `/api/storage?ws=${encodeURIComponent(activeWs)}` : "/api/storage";
+
+  return fetch(url, { cache: "no-store" })
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data) return false;
+      projectSyncDone = true;
+
+      // Hydrate local cache with latest directory
+      if (data.directory) {
+        try { localStorage.setItem(DIRECTORY_KEY, JSON.stringify(data.directory)); } catch {}
+      }
+
+      // Hydrate workspace db and backups
+      if (data.workspace && data.db) {
+        try { localStorage.setItem(dbKey(data.workspace), JSON.stringify(data.db)); } catch {}
+      }
+      if (data.workspace && data.backups) {
+        try { localStorage.setItem(backupKey(data.workspace), JSON.stringify(data.backups)); } catch {}
+      }
+
+      // If this device is currently viewing this workspace, update in-memory state
+      if (activeWs && data.workspace === activeWs && data.db) {
+        state = data.db;
+        stateWs = activeWs;
+        backups = data.backups ?? null;
+        listeners.forEach((l) => l());
+      }
+
+      return true;
+    })
+    .catch((err) => {
+      console.warn("[ProjectStorage] Sync error:", err);
+      return false;
+    });
+}
+
 
 let state: DbState | null = null;
 /** Workspace `state` belongs to; null while signed out (state is then an empty, unsaved shell). */
@@ -159,10 +248,11 @@ function readJson<T>(key: string): T | null {
 function writeJson(key: string, value: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-    return true;
   } catch {
-    return false; // quota exceeded or storage blocked: keep working in memory
+    /* quota exceeded or storage blocked: keep working in memory */
   }
+  syncKeyToProjectStorage(key, value);
+  return true;
 }
 
 function readWorkspace(ws: string): DbState | null {
@@ -193,6 +283,10 @@ let storageReady = false;
 function ensureStorage() {
   if (storageReady) return;
   storageReady = true;
+  if (typeof window !== "undefined" && !projectSyncStarted) {
+    projectSyncStarted = true;
+    syncWithProjectStorage();
+  }
   try {
     if (localStorage.getItem(DIRECTORY_KEY)) return;
     let demo = readJson<DbState>(LEGACY_KEY);
@@ -203,7 +297,9 @@ function ensureStorage() {
     if (oldBackups) localStorage.setItem(backupKey(DEMO_WS), oldBackups);
     syncDirectory(DEMO_WS, demo);
     if (localStorage.getItem(LEGACY_SESSION_KEY) === "true") writeJson(SESSION_KEY, { workspace: DEMO_WS });
-    [LEGACY_KEY, LEGACY_BACKUP_KEY, LEGACY_SESSION_KEY].forEach((k) => localStorage.removeItem(k));
+    [LEGACY_KEY, LEGACY_BACKUP_KEY, LEGACY_SESSION_KEY].forEach((k) => {
+      try { localStorage.removeItem(k); } catch {}
+    });
   } catch {
     /* storage blocked: the app runs signed out */
   }
@@ -228,6 +324,7 @@ function commit(next: DbState) {
   persist();
   if (stateWs) syncDirectory(stateWs, next);
   if (!muted) listeners.forEach((l) => l());
+  if (stateWs) syncWorkspaceToProjectStorage(stateWs, next, directory());
 }
 
 /** Runs store mutations against another workspace (sign-in checks, password reset) without showing it. */
@@ -630,8 +727,40 @@ export function isLoggedIn() {
   return !!ws && !!readWorkspace(ws);
 }
 
-export function login(email: string, password: string): Rec {
+export async function login(email: string, password: string): Promise<Rec> {
   ensureStorage();
+  let serverError: string | null = null;
+
+  // 1. Authenticate with central storage (enables multi-device login across Vercel / Cloud)
+  try {
+    const res = await fetch("/api/storage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "login", email, password }),
+    });
+    const result = await res.json();
+    if (result && result.success && result.workspace && result.db && result.user) {
+      const ws = result.workspace;
+      const user = result.user;
+      writeJson(SESSION_KEY, { workspace: ws });
+      writeJson(dbKey(ws), result.db);
+      state = { ...result.db, currentUserId: user.id };
+      stateWs = ws;
+      backups = null;
+      listeners.forEach((l) => l());
+      return user;
+    } else if (result && result.error) {
+      serverError = result.error;
+    }
+  } catch {
+    /* network failure fallback */
+  }
+
+  if (serverError) {
+    throw new StoreError(serverError);
+  }
+
+  // 2. Offline / local fallback check
   const ws = workspaceOf(email);
   const target = ws ? readWorkspace(ws) : null;
   const user = target?.collections.users.find((u) => emailKey(u.email) === emailKey(email));
@@ -640,7 +769,6 @@ export function login(email: string, password: string): Rec {
     throw new StoreError("Email or password is incorrect");
   }
   if (user.status !== "Active") throw new StoreError(`This account is ${String(user.status).toLowerCase()} — contact your administrator`);
-  // Open the user's own workspace; whatever was open before is dropped from memory.
   writeJson(SESSION_KEY, { workspace: ws });
   state = { ...target!, currentUserId: user.id };
   stateWs = ws;
@@ -653,14 +781,46 @@ export function login(email: string, password: string): Rec {
 }
 
 /** Creates a new, empty company workspace whose first user is this admin, then signs in. */
-export function registerAccount(data: { name: string; email: string; password: string; company?: string }) {
+export async function registerAccount(data: { name: string; email: string; password: string; company?: string }): Promise<Rec> {
   ensureStorage();
   if (!emailKey(data.email)) throw new StoreError("Email is required");
+  if (data.password.length < 6) throw new StoreError("Password must be at least 6 characters");
+
+  let serverError: string | null = null;
+  try {
+    const res = await fetch("/api/storage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "register", ...data }),
+    });
+    const result = await res.json();
+    if (result && result.success && result.workspace && result.db && result.user) {
+      const ws = result.workspace;
+      const user = result.user;
+      writeJson(SESSION_KEY, { workspace: ws });
+      writeJson(dbKey(ws), result.db);
+      state = { ...result.db, currentUserId: user.id };
+      stateWs = ws;
+      backups = null;
+      listeners.forEach((l) => l());
+      return user;
+    } else if (result && result.error) {
+      serverError = result.error;
+    }
+  } catch {
+    /* offline fallback */
+  }
+
+  if (serverError) {
+    throw new StoreError(serverError);
+  }
+
   if (workspaceOf(data.email)) throw new StoreError("An account with this email already exists — sign in instead");
   const ws = `ws${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   const db = newWorkspaceState(data);
-  if (!writeJson(dbKey(ws), db)) throw new StoreError("Browser storage is full or blocked — could not create the workspace");
+  writeJson(dbKey(ws), db);
   syncDirectory(ws, db);
+  syncWorkspaceToProjectStorage(ws, db, directory());
   inWorkspace(ws, () => {
     const next = clone(load());
     pushLog(next, "Create", "Company", `Workspace created for ${String(db.settings.company?.name)}`);
@@ -697,6 +857,7 @@ export function logout() {
   try {
     if (stateWs) logActivity("Logout", "Authentication", `${actorName()} signed out`);
     localStorage.removeItem(SESSION_KEY);
+    syncSessionToProjectStorage(null);
   } catch {
     /* ignore */
   }
@@ -724,6 +885,7 @@ function saveBackups(next: Backup[]) {
     writeJson(backupKey(stateWs), backups);
   }
   listeners.forEach((l) => l());
+  if (stateWs) syncBackupsToProjectStorage(stateWs, backups);
 }
 
 export function listBackups(): Backup[] {
@@ -791,6 +953,9 @@ export function resetDemoData() {
   if (stateWs !== DEMO_WS && company) fresh.settings.company = { ...fresh.settings.company, ...company };
   pushLog(fresh, "Reset", "Database", stateWs === DEMO_WS ? "Workspace reset to demo data" : "Workspace reset — all records removed", "Warning");
   commit(fresh);
+  if (stateWs === DEMO_WS && typeof window !== "undefined") {
+    postProjectStorage({ action: "reset_demo" });
+  }
 }
 
 /** True for the built-in sample company (used to word the reset action). */
