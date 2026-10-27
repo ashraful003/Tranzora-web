@@ -262,7 +262,7 @@ export default function AuthScreen({ screen, onLoginSuccess }: { screen: Screen;
               <button className="primary auth-submit" disabled={busy}>
                 {isLogin ? "Log in" : isRegister ? "Create account" : isOtp ? (otpOk && email ? "Save new password" : "Verify code") : "Send reset code"}
               </button>
-              {isLogin && <p className="rx-hint rx-center">Demo login: admin@tranzora.com / tranzora123</p>}
+              {isLogin && <p className="rx-hint rx-center">Login: admin@deshit-bd.com / 123456789@@@#</p>}
               {isOtp && !otpOk && (
                 <button type="button" className="rx-link rx-center" onClick={() => setInfo(`A new code was sent${email ? ` to ${email}` : ""}. (Demo code: 123456)`)}>
                   Resend code

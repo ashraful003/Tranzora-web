@@ -248,7 +248,7 @@
         "id": "DRV-0001",
         "code": "DRV-0001",
         "createdAt": "2024-05-09T03:53:00.000Z",
-        "updatedAt": "2024-05-09T03:53:00.000Z",
+        "updatedAt": "2026-10-27T08:15:09.223Z",
         "name": "Arif Hossain",
         "employeeId": "EMP-1001",
         "phone": "+880 1710 400 100",
@@ -10204,7 +10204,7 @@
         "roleId": "ROL-0001",
         "branch": "All branches",
         "password": "tranzora123",
-        "lastLogin": "2026-10-26T03:53:00.000Z",
+        "lastLogin": "2026-10-27T08:15:09.087Z",
         "status": "Active"
       },
       {
@@ -10464,6 +10464,17 @@
       }
     ],
     "auditLogs": [
+      {
+        "id": "LOG-1793088909088",
+        "code": "LOG-1793088909088",
+        "createdAt": "2026-10-27T08:15:09.088Z",
+        "updatedAt": "2026-10-27T08:15:09.088Z",
+        "action": "Login",
+        "module": "Authentication",
+        "details": "Admin User signed in",
+        "level": "Info",
+        "userId": "USR-0002"
+      },
       {
         "id": "LOG-0001",
         "code": "LOG-0001",
@@ -12250,5 +12261,5 @@
       "lastActive": "2026-10-23T08:01:28.488Z"
     }
   ],
-  "currentUserId": "USR-0001"
+  "currentUserId": "USR-0002"
 }

@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { buildSeed } from "./seed";
 import { ENTITIES, entityKeys, type CollectionKey, type Rec } from "./schema";
 
@@ -102,7 +103,24 @@ function ensureDirs() {
   }
 }
 
+const TMP_DIR = path.join(os.tmpdir(), "tranzora_data");
+
+function getTmpPath(filePath: string): string {
+  const rel = path.relative(DATA_DIR, filePath);
+  return path.join(TMP_DIR, rel);
+}
+
 function safeReadJson<T>(filePath: string): T | null {
+  // First check /tmp (for Vercel serverless environment)
+  const tmpPath = getTmpPath(filePath);
+  try {
+    if (fs.existsSync(tmpPath)) {
+      const raw = fs.readFileSync(tmpPath, "utf-8");
+      return JSON.parse(raw) as T;
+    }
+  } catch {}
+
+  // Fallback to static data directory
   try {
     if (!fs.existsSync(filePath)) return null;
     const raw = fs.readFileSync(filePath, "utf-8");
@@ -113,15 +131,30 @@ function safeReadJson<T>(filePath: string): T | null {
 }
 
 function safeWriteJson(filePath: string, data: unknown): boolean {
+  let written = false;
+
+  // Always write to /tmp on serverless (so it succeeds even if root is read-only)
+  try {
+    const tmpPath = getTmpPath(filePath);
+    const dir = path.dirname(tmpPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+    written = true;
+  } catch (err) {
+    // ignore
+  }
+
+  // Also write to local project directory if writable
   try {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
-    return true;
+    written = true;
   } catch (err) {
-    console.warn(`[ProjectStorage] Warning writing ${filePath}:`, err);
-    return false;
+    // Expected on Vercel read-only filesystem
   }
+
+  return written;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
