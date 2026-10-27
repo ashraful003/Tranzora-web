@@ -38,9 +38,9 @@ export default function AuthScreen({ screen, onLoginSuccess }: { screen: Screen;
   useEffect(() => {
     if (isLogin) {
       try {
-        setEmail(localStorage.getItem(REMEMBER_KEY) ?? "admin@tranzora.com");
+        setEmail(localStorage.getItem(REMEMBER_KEY) ?? "admin@deshit-bd.com");
       } catch {
-        setEmail("admin@tranzora.com");
+        setEmail("admin@deshit-bd.com");
       }
       setPassword("");
     }

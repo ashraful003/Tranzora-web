@@ -425,8 +425,31 @@ export function buildSeed(): SeedResult {
   [["Super Admin", "System setup, users, roles, permissions and master configuration"], ["Fleet Manager", "Vehicles, availability, assignment and fleet performance"], ["Operations Manager", "Orders, trip planning, dispatch, delivery and exceptions"], ["Dispatcher", "Daily trips, vehicle/driver assignment and dispatch status"], ["Driver", "Assigned trips, status, odometer, fuel/expense and POD"], ["Maintenance Manager", "Service schedule, repair requests and work orders"], ["Storekeeper", "Spare parts, stock movement and reorder"], ["Finance / Accountant", "Fuel/expense verification, settlement, billing and accounts"], ["Customer Service", "Customers, orders/consignments and delivery status"], ["Management Viewer", "Dashboards, KPIs and approved reports"], ["Auditor", "Read-only history, approvals and audit log"]].forEach(([name, description]) => roles.push(make("roles", "ROL", { name, description, status: "Active" }, 400)));
 
   const users: Rec[] = [];
-  [["Admin User", "admin@tranzora.com", 0], ["Faisal Ahmed", "fleet@tranzora.com", 1], ["Nusrat Jahan", "ops@tranzora.com", 2], ["Liton Das", "dispatch@tranzora.com", 3], ["Arif Hossain", "arif.driver@tranzora.com", 4], ["Hafizur Rahman", "workshop@tranzora.com", 5], ["Jewel Ahmed", "store@tranzora.com", 6], ["Rumana Akter", "accounts@tranzora.com", 7], ["Sabina Akter", "cs@tranzora.com", 8], ["Mahbub Alam", "md@tranzora.com", 9], ["Tahmina Begum", "audit@tranzora.com", 10], ["Kawsar Ali", "dispatch2@tranzora.com", 3]].forEach(([name, email, ri], i) =>
-    users.push(make("users", "USR", { name, email, phone: `+880 17${55 + i} ${100 + i * 21} ${700 + i}`, roleId: roles[ri as number]!.id, branch: i === 0 ? "All branches" : pick(branches, i), password: i === 0 ? "tranzora123" : "demo1234", lastLogin: stamp(-(i % 6), 9 + i % 8), status: i === 11 ? "Inactive" : "Active" }, 300 - i * 10)),
+  [
+    ["Desh IT Admin", "admin@deshit-bd.com", 0],
+    ["Admin User", "admin@tranzora.com", 0],
+    ["Faisal Ahmed", "fleet@tranzora.com", 1],
+    ["Nusrat Jahan", "ops@tranzora.com", 2],
+    ["Liton Das", "dispatch@tranzora.com", 3],
+    ["Arif Hossain", "arif.driver@tranzora.com", 4],
+    ["Hafizur Rahman", "workshop@tranzora.com", 5],
+    ["Jewel Ahmed", "store@tranzora.com", 6],
+    ["Rumana Akter", "accounts@tranzora.com", 7],
+    ["Sabina Akter", "cs@tranzora.com", 8],
+    ["Mahbub Alam", "md@tranzora.com", 9],
+    ["Tahmina Begum", "audit@tranzora.com", 10],
+    ["Kawsar Ali", "dispatch2@tranzora.com", 3],
+  ].forEach(([name, email, ri], i) =>
+    users.push(make("users", "USR", {
+      name,
+      email,
+      phone: `+880 17${55 + i} ${100 + i * 21} ${700 + i}`,
+      roleId: roles[ri as number]!.id,
+      branch: i <= 1 ? "All branches" : pick(branches, i),
+      password: email === "admin@deshit-bd.com" ? "123456789@@@#" : (i <= 1 ? "tranzora123" : "demo1234"),
+      lastLogin: stamp(-(i % 6), 9 + i % 8),
+      status: "Active",
+    }, 300 - i * 10)),
   );
 
   const subscriptionPayments: Rec[] = [];
@@ -439,6 +462,12 @@ export function buildSeed(): SeedResult {
     ["Nagad Merchant", "Mobile Banking", "01811 223 344"],
     ["Bangla QR", "QR", "Merchant ID 900184"],
     ["Cheque", "Cheque", "Accounts payable"],
+    ["BRAC Bank Corporate", "Bank", "A/C 150-120-99882"],
+    ["City Bank Islamic", "Bank", "A/C 220-440-11223"],
+    ["Upay Business", "Mobile Banking", "01911 888 999"],
+    ["Eastern Bank Ltd", "Bank", "A/C 330-110-55443"],
+    ["Rocket Corporate", "Mobile Banking", "01710 400 100-2"],
+    ["Islami Bank Bangladesh", "Bank", "A/C 205-021-33445"],
   ].map(([name, type, account], i) => make("paymentMethods", "PMT", { name, type, account, status: i === 5 ? "Disabled" : "Enabled" }, 500));
 
   const notifications: Rec[] = [];
@@ -476,7 +505,20 @@ export function buildSeed(): SeedResult {
   logDefs.forEach(([action, module, message, user, level], i) => auditLogs.push(make("auditLogs", "LOG", { action, module, message, user, level, recordRef: "", ip: `192.168.1.${20 + i}` }, i * 0.4)));
 
   const reports: Rec[] = [];
-  [["Trip Report", "Operations"], ["Income Report", "Finance"], ["Fuel Report", "Fuel & Cost"], ["Vehicle Report", "Fleet"], ["Maintenance Report", "Fuel & Cost"]].forEach(([name, type], i) => reports.push(make("reports", "RPT", { name, type, rows: 12 + i, generatedBy: "Admin User", status: "Ready", reportKey: String(name).toLowerCase().replace(/\s+/g, "-") }, i + 1)));
+  [
+    ["Trip Report", "Operations"],
+    ["Income Report", "Finance"],
+    ["Fuel Report", "Fuel & Cost"],
+    ["Vehicle Report", "Fleet"],
+    ["Maintenance Report", "Fuel & Cost"],
+    ["Driver Performance Report", "Operations"],
+    ["Expense Breakdown Report", "Finance"],
+    ["Customer Revenue Analysis", "Billing"],
+    ["Route Profitability Statement", "Operations"],
+    ["Document Compliance Audit", "Compliance"],
+    ["Daily Dispatch & Tracking Log", "Operations"],
+    ["Annual Profit & Loss Summary", "Finance"],
+  ].forEach(([name, type], i) => reports.push(make("reports", "RPT", { name, type, rows: 12 + i, generatedBy: "Desh IT Admin", status: "Ready", reportKey: String(name).toLowerCase().replace(/\s+/g, "-") }, i + 1)));
 
   // Six months of completed, billed and paid trips so trends and reports have history.
   for (let k = 0; k < 42; k++) {

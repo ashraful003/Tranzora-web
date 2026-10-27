@@ -222,7 +222,7 @@ export async function initProjectStorage() {
   if (isCloudStorage()) {
     const dir = await cloudGet<Record<string, string>>("tranzora:directory");
     if (!dir) {
-      await cloudSet("tranzora:directory", { "admin@tranzora.com": DEMO_WS });
+      await cloudSet("tranzora:directory", { "admin@deshit-bd.com": DEMO_WS, "admin@tranzora.com": DEMO_WS });
     }
     const demo = await cloudGet<DbState>(`tranzora:ws:${DEMO_WS}:db`);
     if (!demo) {
@@ -239,7 +239,7 @@ export async function initProjectStorage() {
   }
 
   if (!fs.existsSync(DIRECTORY_FILE)) {
-    const dir: Record<string, string> = { "admin@tranzora.com": DEMO_WS };
+    const dir: Record<string, string> = { "admin@deshit-bd.com": DEMO_WS, "admin@tranzora.com": DEMO_WS };
     safeWriteJson(DIRECTORY_FILE, dir);
   }
 
@@ -252,10 +252,13 @@ export async function initProjectStorage() {
 export async function readDirectory(): Promise<Record<string, string>> {
   if (isCloudStorage()) {
     const dir = await cloudGet<Record<string, string>>("tranzora:directory");
-    return dir ?? { "admin@tranzora.com": DEMO_WS };
+    return dir ?? { "admin@deshit-bd.com": DEMO_WS, "admin@tranzora.com": DEMO_WS };
   }
   await initProjectStorage();
-  return safeReadJson<Record<string, string>>(DIRECTORY_FILE) ?? { "admin@tranzora.com": DEMO_WS };
+  const d = safeReadJson<Record<string, string>>(DIRECTORY_FILE) ?? {};
+  d["admin@deshit-bd.com"] = DEMO_WS;
+  d["admin@tranzora.com"] = DEMO_WS;
+  return d;
 }
 
 export async function writeDirectory(dir: Record<string, string>): Promise<boolean> {
